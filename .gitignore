@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.env
+
+# 大文件/媒体不进 git（放库外或本地）
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.jpg
+*.jpeg
+*.png
+*.gif
+
+# Obsidian 工作区状态
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+
+# 按用户数据生成，不进模板
+_meta/context_prompt.md

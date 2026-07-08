@@ -1,0 +1,19 @@
+# Memory Vault MCP Server (HTTP, Tailscale-only)
+# 安装：cp 到 /etc/systemd/system/ 后 systemctl daemon-reload && systemctl enable --now memory-vault-mcp
+# 可选共享密钥：在 /opt/memory-vault/.env 写 VAULT_TOKEN=xxx 并取消下面 EnvironmentFile 注释
+
+[Unit]
+Description=Memory Vault MCP Server (streamable-http)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/memory-vault
+ExecStart=/opt/memory-vault-env/bin/python /opt/memory-vault/_meta/mcp_server.py --http --port 8900
+# EnvironmentFile=-/opt/memory-vault/.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

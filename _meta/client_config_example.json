@@ -1,0 +1,26 @@
+{
+  "_说明": "把下面对应的 memory-vault 配置复制到客户端的 MCP 配置文件中",
+
+  "_桌面端_stdio模式": {
+    "_Claude_Desktop_配置文件位置": "%APPDATA%\\Claude\\claude_desktop_config.json（macOS: ~/Library/Application Support/Claude/）",
+    "mcpServers": {
+      "memory-vault": {
+        "command": "python",
+        "args": ["<你的绝对路径>/memory-vault/_meta/mcp_server.py"]
+      }
+    }
+  },
+
+  "_手机端_远程端_HTTP模式": {
+    "_前提": "电脑（或 VPS）上跑 python _meta/mcp_server.py --http，设备间用 Tailscale 组网",
+    "_URL": "http://<服务器的Tailscale-IP>:8900/mcp",
+    "_传输类型": "streamable-http",
+    "_可选密钥": "服务端设置 VAULT_TOKEN 环境变量后，客户端需带请求头 Authorization: Bearer <密钥> 或 X-Vault-Token: <密钥>"
+  },
+
+  "_ChatGPT连接器": {
+    "_前提": "需要公网 HTTPS，见 _meta/deploy/vps_setup.md 的公网入口一节",
+    "_URL": "https://<节点>.<tailnet>.ts.net/mcp-<秘密串>/mcp",
+    "_身份验证": "未授权（安全靠秘密路径）"
+  }
+}
