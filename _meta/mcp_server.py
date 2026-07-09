@@ -61,6 +61,35 @@ def _now() -> datetime.datetime:
 def _today() -> datetime.date:
     return _now().date()
 
+
+_WEEKDAY_CN = "一二三四五六日"
+
+
+def _time_of_day_label(hour: int) -> str:
+    if hour < 5:
+        return "凌晨"
+    if hour < 8:
+        return "早上"
+    if hour < 11:
+        return "上午"
+    if hour < 13:
+        return "中午"
+    if hour < 17:
+        return "下午"
+    if hour < 19:
+        return "傍晚"
+    if hour < 23:
+        return "晚上"
+    return "深夜"
+
+
+def _now_line() -> str:
+    now = _now()
+    return (
+        f"🕐 现在是 {now.strftime('%Y-%m-%d')} 星期{_WEEKDAY_CN[now.weekday()]} "
+        f"{now.strftime('%H:%M')}（{_time_of_day_label(now.hour)}）——回应要贴合当下时段和星期，问候语别跑偏。"
+    )
+
 GIT_TIMEOUT = 30        # 秒，写路径 git 操作超时
 PULL_TIMEOUT = 10       # 秒，读路径 pull 超时
 PULL_INTERVAL = 300     # 秒，读路径 pull 节流间隔
@@ -68,7 +97,7 @@ PULL_INTERVAL = 300     # 秒，读路径 pull 节流间隔
 mcp = FastMCP(
     "memory-vault",
     instructions=(
-        f"{OWNER} 的 AI 共享记忆库（自主模式：不需要 {OWNER} 审批，出错主人会自己改）。"
+        "Iris 的 AI 共享记忆库（自主模式：不需要 Iris 审批，出错她会自己改）。"
         "每次新会话第一轮回复前，先调用 get_context 获取核心记忆、时间敏感事项和最近日常。"
         "话题相关时用 search_vault 补充搜索，get_related 沿 [[链接]] 和标签联想相关记忆。"
         "写入分流："
@@ -78,7 +107,7 @@ mcp = FastMCP(
         "有截止/预期时间的事 → add_task，完成或作废时 update_task；"
         "修正已有记忆 → update_memory；整条作废 → archive_memory（软删除，git 可回滚）。"
         "写入正文时主动用 [[slug]] 链接相关记忆。"
-        "核心身份文件（vault_config 的 core_files）只能追加不能重写。"
+        "核心身份文件（iris-core、iris-ai-interaction-styles）只能追加不能重写。"
         "所有写入自动 git 同步到全部设备。"
     ),
 )
@@ -257,12 +286,14 @@ def _time_sensitive_lines() -> list[str]:
         elif delta == 0:
             due_today.append(f"- 🔔 {entry} 今天到期")
         elif delta <= 7:
-            upcoming.append(f"- {entry} 还有 {delta} 天（{due.isoformat()}）")
+            upcoming.append(
+                f"- {entry} 还有 {delta} 天（{due.isoformat()} 星期{_WEEKDAY_CN[due.weekday()]}）"
+            )
 
     items = overdue + due_today + upcoming + no_due
     if not items:
         return []
-    return ["## ⏰ 时间敏感（今天是 " + today.isoformat() + "）", ""] + items + [""]
+    return ["## ⏰ 时间敏感事项", ""] + items + [""]
 
 
 def _recent_diary_lines(days: int = 3, max_lines: int = 30) -> list[str]:
@@ -277,7 +308,8 @@ def _recent_diary_lines(days: int = 3, max_lines: int = 30) -> list[str]:
         _, body = _parse_frontmatter(fp.read_text(encoding="utf-8", errors="replace"))
         entries = [ln for ln in body.split("\n") if ln.startswith("- ")]
         if entries:
-            collected.append(f"### {d.isoformat()}")
+            label = {0: "今天", 1: "昨天", 2: "前天"}.get(offset)
+            collected.append(f"### {d.isoformat()}" + (f"（{label}）" if label else ""))
             collected.extend(entries)
 
     if not collected:
@@ -299,6 +331,8 @@ def get_context() -> str:
 
     parts = [
         f"# {OWNER} 核心记忆上下文",
+        "",
+        _now_line(),
         "",
         "⚠ source 只是记忆的写入来源，不是当前 AI 的身份。你的身份由你自己的指令和身份配置决定。",
         "",
