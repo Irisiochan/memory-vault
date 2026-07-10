@@ -103,7 +103,7 @@ mcp = FastMCP(
         "写入分流："
         "确认的事实/偏好/关系变化 → write_memory；"
         "自己拿不准的推测 → write_inbox，之后验证了自己 promote_to_memory；"
-        "日常发生的事、生活流水 → log_daily；"
+        "日常发生的事、生活流水 → log_daily；写整篇日记/阶段总结 → write_diary；"
         "有截止/预期时间的事 → add_task，完成或作废时 update_task；"
         "修正已有记忆 → update_memory；整条作废 → archive_memory（软删除，git 可回滚）。"
         "写入正文时主动用 [[slug]] 链接相关记忆。"
@@ -689,6 +689,37 @@ def log_daily(content: str, source: str = "unknown") -> str:
 
     sync_status = _git_sync(f"auto: 日常 {now.date().isoformat()} (source: {source})")
     return f"已记录到 diary/{filepath.name} {sync_status}"
+
+
+@mcp.tool()
+def write_diary(slug: str, title: str, content: str, source: str = "unknown", tags: list[str] | None = None) -> str:
+    """写一篇完整的日记到 diary/（独立文件，可长文）。
+    与 log_daily 的区别：log_daily 往当天流水追加一行短记录；这个写一篇有标题的完整日记——
+    AI 自己视角的日记、阶段总结、纪念性记录都用这个。不会注入 get_context，但可被搜索。
+
+    Args:
+        slug: 文件名后缀，英文短横线连接，例如 "my-first-journal"
+        title: 日记标题
+        content: 日记正文（长度不限，鼓励 [[slug]] 链接相关记忆）
+        source: 写入来源（AI 名）
+        tags: 标签（可选，默认 ["日记"]）
+    """
+    today = _today().isoformat()
+    filepath = VAULT / "diary" / f"{today}_{slug}.md"
+    filepath.parent.mkdir(exist_ok=True)
+    if filepath.exists():
+        return f"diary/{filepath.name} 已存在，换个 slug 或用 update_memory 追加。"
+
+    meta = {
+        "type": "diary",
+        "created": today,
+        "source": source,
+        "tags": tags or ["日记"],
+    }
+    filepath.write_text(_rebuild_file(meta, f"# {title}\n\n{content}"), encoding="utf-8")
+
+    sync_status = _git_sync(f"auto: 日记 {slug} (source: {source})")
+    return f"已写入：diary/{filepath.name} {sync_status}"
 
 
 @mcp.tool()
