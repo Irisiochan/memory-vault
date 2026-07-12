@@ -17,7 +17,12 @@
 
 仓库现在不只是 MCP 记忆服务，也包含可自托管的 Memory Vault Hub。它支持 Claude CLI、Codex、Anthropic API 和 OpenAI-compatible API，并通过网关自动注入、检索和暂存记忆。
 
-最快启动方式见 [`app/README.md`](app/README.md)。只想把 vault 接入现有客户端，也可以继续单独使用下面的 MCP 流程。
+你可以二选一：
+
+- **Windows 开箱版**：到 [Releases](https://github.com/Irisiochan/memory-vault/releases) 下载 `Memory-Vault-Windows-x64.zip`，解压后双击 `start.cmd`。不需要预装 Python 或 Node.js，首次打开只需填写 API 地址、模型和 Key。
+- **开发者版**：保留 Claude CLI、Codex、源码调试、自定义部署等完整能力，见 [`app/README.md`](app/README.md)。
+
+只想把 vault 接入现有客户端，也可以继续单独使用下面的 MCP 流程。
 
 ## 快速开始（10 分钟，纯本地）
 

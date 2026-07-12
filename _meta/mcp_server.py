@@ -107,7 +107,7 @@ mcp = FastMCP(
         "有截止/预期时间的事 → add_task，完成或作废时 update_task；"
         "修正已有记忆 → update_memory；整条作废 → archive_memory（软删除，git 可回滚）。"
         "写入正文时主动用 [[slug]] 链接相关记忆。"
-        "核心身份文件（iris-core、iris-ai-interaction-styles）只能追加不能重写。"
+        "核心身份文件由 vault_config.yaml 的 core_files 指定，只能追加不能重写。"
         "所有写入自动 git 同步到全部设备。"
     ),
 )

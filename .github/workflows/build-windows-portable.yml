@@ -1,0 +1,90 @@
+name: Build Windows portable
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows-portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/server/package-lock.json
+            app/web/package-lock.json
+
+      - name: Build web and server
+        shell: pwsh
+        run: |
+          npm ci --prefix app/web
+          npm run build --prefix app/web
+          npm ci --prefix app/server
+          npm run build --prefix app/server
+          npm prune --omit=dev --prefix app/server
+
+      - name: Assemble portable folder
+        shell: pwsh
+        run: |
+          $bundle = Join-Path $PWD 'bundle\Memory-Vault'
+          New-Item -ItemType Directory -Path $bundle -Force | Out-Null
+          Copy-Item README.md, LICENSE, CLAUDE.md -Destination $bundle
+          Copy-Item memories, _meta, easy -Destination $bundle -Recurse
+          New-Item -ItemType Directory -Path "$bundle\tasks","$bundle\inbox","$bundle\projects","$bundle\diary","$bundle\_archive" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$bundle\app\server","$bundle\app\web" -Force | Out-Null
+          Copy-Item app/server/dist, app/server/node_modules -Destination "$bundle\app\server" -Recurse
+          Copy-Item app/server/package.json, app/server/config.easy.json -Destination "$bundle\app\server"
+          Copy-Item app/web/dist -Destination "$bundle\app\web" -Recurse
+          Copy-Item easy/start.cmd, easy/start.ps1 -Destination $bundle
+
+      - name: Bundle Node.js runtime
+        shell: pwsh
+        run: |
+          $version = '22.17.0'
+          Invoke-WebRequest "https://nodejs.org/dist/v$version/node-v$version-win-x64.zip" -OutFile node.zip
+          Expand-Archive node.zip node-runtime
+          New-Item -ItemType Directory -Path bundle\Memory-Vault\runtime\node -Force | Out-Null
+          Copy-Item "node-runtime\node-v$version-win-x64\node.exe" bundle\Memory-Vault\runtime\node\node.exe
+
+      - name: Bundle Python runtime and dependencies
+        shell: pwsh
+        run: |
+          $version = '3.12.10'
+          $py = 'bundle\Memory-Vault\runtime\python'
+          New-Item -ItemType Directory -Path $py -Force | Out-Null
+          Invoke-WebRequest "https://www.python.org/ftp/python/$version/python-$version-embed-amd64.zip" -OutFile python.zip
+          Expand-Archive python.zip $py
+          (Get-Content "$py\python312._pth") -replace '#import site','import site' | Set-Content "$py\python312._pth" -Encoding ascii
+          Invoke-WebRequest 'https://bootstrap.pypa.io/get-pip.py' -OutFile "$py\get-pip.py"
+          & "$py\python.exe" "$py\get-pip.py" --no-warn-script-location
+          & "$py\python.exe" -m pip install --no-warn-script-location 'mcp[cli]' pyyaml tzdata
+          Remove-Item "$py\get-pip.py" -Force
+
+      - name: Create ZIP
+        shell: pwsh
+        run: Compress-Archive bundle\Memory-Vault Memory-Vault-Windows-x64.zip -CompressionLevel Optimal
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Memory-Vault-Windows-x64
+          path: Memory-Vault-Windows-x64.zip
+
+      - name: Attach ZIP to tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${{ github.ref_name }}" 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create "${{ github.ref_name }}" --title "Memory Vault ${{ github.ref_name }}" --generate-notes
+          }
+          gh release upload "${{ github.ref_name }}" Memory-Vault-Windows-x64.zip --clobber

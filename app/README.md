@@ -2,6 +2,8 @@
 
 随 Memory Vault 一起提供的自托管聊天前端。它把多个 AI 联系人、共享记忆和聊天历史放进一个 IM 风格界面。
 
+> 这里是保留 CLI 后端与源码调试能力的开发者版。Windows 用户如果只想下载即用，请到仓库 [Releases](https://github.com/Irisiochan/memory-vault/releases) 获取便携版。
+
 ## 已支持
 
 - Claude CLI、Codex app-server、Anthropic API、OpenAI-compatible API
@@ -61,3 +63,7 @@ cd ../server && npm install && npm run build && npm start
 - `config.json`、agent 工作目录、构建产物均不会进入 git。
 - 默认没有登录层，只适合 localhost、可信局域网或 Tailscale。
 - 开源仓库是模板；真正填入个人记忆后，请使用 private 仓库。
+
+## 便携版如何构建
+
+`.github/workflows/build-windows-portable.yml` 会在版本标签或手动运行时自动构建 Windows x64 ZIP，内置 Node.js、Python、MCP 依赖和生产版前后端。便携版默认只开放 API 联系人；Claude/Codex CLI 能力仍保留在本开发者版中。
