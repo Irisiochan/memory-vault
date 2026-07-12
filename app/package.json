@@ -1,0 +1,11 @@
+{
+  "name": "ai-hub",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:server": "npm run dev --prefix server",
+    "dev:web": "npm run dev --prefix web",
+    "build": "npm run build --prefix web && npm run build --prefix server",
+    "start": "npm run start --prefix server"
+  }
+}

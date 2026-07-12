@@ -1,6 +1,12 @@
 __pycache__/
 *.py[cod]
 .env
+app/**/node_modules/
+app/**/dist/
+app/server/data/
+app/server/config.json
+app/server/agents/
+app/*.log
 
 # 大文件/媒体不进 git（放库外或本地）
 *.mp4

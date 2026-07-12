@@ -97,7 +97,7 @@ PULL_INTERVAL = 300     # 秒，读路径 pull 节流间隔
 mcp = FastMCP(
     "memory-vault",
     instructions=(
-        "Iris 的 AI 共享记忆库（自主模式：不需要 Iris 审批，出错她会自己改）。"
+        "记忆库主人的 AI 共享记忆库（自主模式：不需要主人逐条审批，出错可通过 git 回滚）。"
         "每次新会话第一轮回复前，先调用 get_context 获取核心记忆、时间敏感事项和最近日常。"
         "话题相关时用 search_vault 补充搜索，get_related 沿 [[链接]] 和标签联想相关记忆。"
         "写入分流："

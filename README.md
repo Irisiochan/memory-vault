@@ -11,6 +11,13 @@
 - ⏰ **时间感知**：带截止日期的事进 `tasks/`，过期了 AI 会主动问你办完没
 - 🔗 **联想**：记忆之间用 `[[wikilink]]` 互连，`get_related` 顺藤摸瓜
 - 🔄 **全平台同步**：写入即 git push，读取自动 pull，多设备/多 AI 并发不打架
+- 💬 **自带聊天前端**：多 AI 联系人、群聊、流式回复、消息管理和自动记忆注入，见 [`app/`](app/README.md)
+
+## 自带聊天前端
+
+仓库现在不只是 MCP 记忆服务，也包含可自托管的 Memory Vault Hub。它支持 Claude CLI、Codex、Anthropic API 和 OpenAI-compatible API，并通过网关自动注入、检索和暂存记忆。
+
+最快启动方式见 [`app/README.md`](app/README.md)。只想把 vault 接入现有客户端，也可以继续单独使用下面的 MCP 流程。
 
 ## 快速开始（10 分钟，纯本地）
 
