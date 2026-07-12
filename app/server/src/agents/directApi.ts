@@ -201,6 +201,7 @@ export class DirectApiBackend implements AgentBackend {
       body: JSON.stringify({
         model: this.opts.model,
         stream: true,
+        stream_options: { include_usage: true },
         messages: [
           ...(this.opts.systemPrompt
             ? [{ role: 'system', content: this.opts.systemPrompt }]
@@ -235,8 +236,8 @@ export class DirectApiBackend implements AgentBackend {
       }
       if (ev.usage) {
         usage = {
-          input: ev.usage.prompt_tokens ?? 0,
-          output: ev.usage.completion_tokens ?? 0,
+          input: ev.usage.prompt_tokens ?? ev.usage.input_tokens ?? 0,
+          output: ev.usage.completion_tokens ?? ev.usage.output_tokens ?? 0,
         };
       }
     }
