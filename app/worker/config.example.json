@@ -9,6 +9,7 @@
   "runners": ["codex", "claude"],
   "codexCommand": "codex.cmd",
   "codexModel": "",
+  "codexWindowsSandbox": "unelevated",
   "claudeCommand": "claude.cmd",
   "allowShell": false,
   "allowSsh": false

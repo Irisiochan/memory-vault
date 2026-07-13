@@ -71,6 +71,9 @@ PC Worker 适合“Hub 在 VPS、代码和 CLI 在个人电脑”的场景。PC 
 Shell、SSH、读写和 workspace 都按 Worker 能力与每条任务的权限快照匹配。Codex 的文件工具本身
 依赖 Shell，因此 Codex 任务必须显式开启 Shell；`write=false` 时仍由 Codex read-only sandbox 禁止写入。
 
+Windows Worker 默认仅对自己的 Codex 子进程覆盖 `windows.sandbox="unelevated"`，用于规避部分
+登录会话中的 `CreateProcessAsUserW failed: 1312`，不会改动 Codex Desktop 全局配置。
+
 ## 安全说明
 
 - API key 和聊天历史保存在本机 `app/server/data/hub.db`，该目录已被 gitignore。

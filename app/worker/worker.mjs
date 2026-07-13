@@ -119,10 +119,14 @@ function runner(job) {
   const command = cfg.codexCommand ?? (process.platform === 'win32' ? 'codex.cmd' : 'codex');
   const model = typeof cfg.codexModel === 'string' && /^[a-zA-Z0-9._-]{1,100}$/.test(cfg.codexModel)
     ? ['--model', cfg.codexModel] : [];
+  const windowsSandbox = process.platform === 'win32'
+    && ['elevated', 'unelevated'].includes(cfg.codexWindowsSandbox ?? 'unelevated')
+    ? ['--config', `windows.sandbox="${cfg.codexWindowsSandbox ?? 'unelevated'}"`]
+    : [];
   if (sessionId) {
-    return { command, args: ['exec', 'resume', '--json', ...model, sessionId, '-'], stdin: prompt };
+    return { command, args: ['exec', 'resume', '--json', ...windowsSandbox, ...model, sessionId, '-'], stdin: prompt };
   }
-  return { command, args: ['exec', '--json', '--sandbox', sandbox, '--skip-git-repo-check', ...model, '-'], stdin: prompt };
+  return { command, args: ['exec', '--json', ...windowsSandbox, '--sandbox', sandbox, '--skip-git-repo-check', ...model, '-'], stdin: prompt };
 }
 
 async function execute(job) {
