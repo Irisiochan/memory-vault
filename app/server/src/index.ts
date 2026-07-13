@@ -9,6 +9,7 @@ import { ClaudeQuotaPoller } from './quota/claudeQuota.js';
 import { contactsRouter } from './routes/contacts.js';
 import { messagesRouter } from './routes/messages.js';
 import { userRouter } from './routes/user.js';
+import { workersRouter } from './routes/workers.js';
 import { seedIfEmpty } from './seed.js';
 import { SseHub } from './sse.js';
 
@@ -43,9 +44,10 @@ app.get('/api/events', (req, res) => {
 const quotaPoller = new ClaudeQuotaPoller((m) => console.log(`  [quota] ${m}`));
 quotaPoller.start();
 
-app.use('/api/contacts', contactsRouter(db, sse, manager));
+app.use('/api/contacts', contactsRouter(db, sse, manager, config));
 app.use('/api/contacts', messagesRouter(db, sse, manager));
 app.use('/api/user', userRouter(db, sse));
+app.use('/api', workersRouter(db, sse));
 app.get('/api/quota/claude', (_req, res) => {
   const q = quotaPoller.get();
   res.json({ available: q !== null, ...(q ?? {}) });

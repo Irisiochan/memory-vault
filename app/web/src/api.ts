@@ -81,6 +81,56 @@ export interface ContactStatus {
   member?: string;
 }
 
+export interface ModelOption {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
+export interface ModelCatalog {
+  models: ModelOption[];
+  current: string;
+  dynamic: boolean;
+  warning?: string;
+}
+
+export interface Worker {
+  id: string;
+  name: string;
+  capabilities: { runners?: string[]; workspaces?: string[]; shell?: boolean; ssh?: boolean };
+  status: string;
+  last_seen_at: string | null;
+}
+
+export interface WorkerJob {
+  id: string;
+  requested_by: string | null;
+  worker_id: string | null;
+  runner: 'codex' | 'claude';
+  workspace: string;
+  prompt: string;
+  status: string;
+  priority: number;
+  ttl_at: string | null;
+  session_id: string | null;
+  permissions: { write?: boolean; shell?: boolean; ssh?: boolean };
+  result: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JobMessage {
+  id: number;
+  job_id: string;
+  sender: string;
+  kind: string;
+  content: string;
+  meta: string;
+  created_at: string;
+}
+
 export const api = {
   contacts: () => req<{ contacts: Contact[] }>('/api/contacts'),
 
@@ -89,6 +139,14 @@ export const api = {
 
   updateContact: (id: string, data: ContactPayload) =>
     req<Contact>(`/api/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  models: (id: string) => req<ModelCatalog>(`/api/contacts/${id}/models`),
+
+  switchModel: (id: string, model: string) =>
+    req<Contact>(`/api/contacts/${id}/model`, {
+      method: 'PATCH',
+      body: JSON.stringify({ model }),
+    }),
 
   deleteContact: (id: string) =>
     req<{ ok: boolean }>(`/api/contacts/${id}`, { method: 'DELETE' }),
@@ -132,6 +190,27 @@ export const api = {
 
   resetSession: (contactId: string) =>
     req<{ ok: boolean }>(`/api/contacts/${contactId}/session/reset`, { method: 'POST' }),
+
+  workers: () => req<{ workers: Worker[] }>('/api/workers'),
+
+  pairWorker: (name: string, id?: string) =>
+    req<{ worker: Worker; token: string }>('/api/workers', {
+      method: 'POST', body: JSON.stringify({ name, id }),
+    }),
+
+  jobs: () => req<{ jobs: WorkerJob[] }>('/api/jobs'),
+
+  job: (id: string) => req<{ job: WorkerJob; messages: JobMessage[] }>(`/api/jobs/${id}`),
+
+  createJob: (data: {
+    runner: 'codex' | 'claude'; workspace: string; prompt: string; workerId?: string;
+    permissions?: { write?: boolean; shell?: boolean; ssh?: boolean };
+  }) => req<WorkerJob>('/api/jobs', { method: 'POST', body: JSON.stringify(data) }),
+
+  jobAction: (id: string, action: 'cancel' | 'pause' | 'resume') =>
+    req<{ ok: boolean; status: string }>(`/api/jobs/${id}/action`, {
+      method: 'POST', body: JSON.stringify({ action }),
+    }),
 };
 
 export interface SseHandlers {
@@ -141,6 +220,9 @@ export interface SseHandlers {
   onContact(c: Contact): void;
   onPrune(p: { contactId: string; ids?: number[]; afterId?: number }): void;
   onUser(u: UserProfile): void;
+  onJob?(j: WorkerJob): void;
+  onJobMessage?(m: JobMessage): void;
+  onWorker?(w: Worker): void;
   onReconnect(): void;
 }
 
@@ -168,6 +250,9 @@ export function connectEvents(handlers: SseHandlers): () => void {
     es.addEventListener('contact', (e) => handlers.onContact(JSON.parse(e.data)));
     es.addEventListener('prune', (e) => handlers.onPrune(JSON.parse(e.data)));
     es.addEventListener('user', (e) => handlers.onUser(JSON.parse(e.data)));
+    es.addEventListener('job', (e) => handlers.onJob?.(JSON.parse(e.data)));
+    es.addEventListener('job-message', (e) => handlers.onJobMessage?.(JSON.parse(e.data)));
+    es.addEventListener('worker', (e) => handlers.onWorker?.(JSON.parse(e.data)));
   };
 
   open();

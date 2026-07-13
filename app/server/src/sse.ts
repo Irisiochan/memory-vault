@@ -6,7 +6,10 @@ export type SseEvent =
   | 'status' // { contactId, state, detail? }
   | 'contact' // contact config changed
   | 'prune' // { contactId, ids?: number[], afterId?: number } messages removed
-  | 'user'; // user profile changed
+  | 'user' // user profile changed
+  | 'worker'
+  | 'job'
+  | 'job-message';
 
 export class SseHub {
   private clients = new Set<Response>();

@@ -13,6 +13,8 @@
 - 每次会话自动注入 `get_context`，每轮按关键词检索记忆
 - 明显的计划、偏好和人生事件自动暂存到 vault inbox
 - 共享记忆身份隔离：共享知识不会被模型冒认成自己的经历
+- 联系人模型切换：Codex 动态读取当前账号模型目录，切换后安全重建底层会话
+- 离线优先 PC Worker：VPS 持久队列、本机主动认领、过程可视化、暂停/取消/人工恢复
 
 ## 本地启动
 
@@ -57,10 +59,23 @@ cd ../server && npm install && npm run build && npm start
 
 若 MCP 设置了 `VAULT_TOKEN`，启动 Hub 时也要设置同名环境变量。
 
+## PC Worker
+
+PC Worker 适合“Hub 在 VPS、代码和 CLI 在个人电脑”的场景。PC 只主动发出长轮询连接，
+不需要开放入站端口；离线时任务留在 VPS，运行中失联会中断并等待人工决定，不会盲目重跑。
+
+1. 前端左上角点 `🖥`，生成一次性设备令牌。
+2. 复制 `worker/config.example.json` 为 `worker/config.json`，填令牌和 workspace allowlist。
+3. 运行 `node worker/worker.mjs worker/config.json`；Windows 可运行 `worker/install-startup.ps1` 安装登录自启。
+
+Shell、SSH、读写和 workspace 都按 Worker 能力与每条任务的权限快照匹配。Codex 的文件工具本身
+依赖 Shell，因此 Codex 任务必须显式开启 Shell；`write=false` 时仍由 Codex read-only sandbox 禁止写入。
+
 ## 安全说明
 
 - API key 和聊天历史保存在本机 `app/server/data/hub.db`，该目录已被 gitignore。
 - `config.json`、agent 工作目录、构建产物均不会进入 git。
+- `worker/config.json` 和本机断线补传状态不会进入 git；VPS 仅保存设备令牌哈希。
 - 默认没有登录层，只适合 localhost、可信局域网或 Tailscale。
 - 开源仓库是模板；真正填入个人记忆后，请使用 private 仓库。
 

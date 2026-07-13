@@ -5,6 +5,7 @@ import {
   type Contact,
   type ContactStatus,
   type Message,
+  type ModelCatalog,
   type Usage,
   type UserProfile,
 } from '../api';
@@ -46,6 +47,8 @@ export default function ChatPane({ contact, contacts, messages, status, user, on
   const [editing, setEditing] = useState<{ id: number; draft: string } | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [quota, setQuota] = useState<ClaudeQuota | null>(null);
+  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
+  const [switchingModel, setSwitchingModel] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -65,6 +68,14 @@ export default function ChatPane({ contact, contacts, messages, status, user, on
     setSelectedMsg(null);
     setEditing(null);
   }, [contact.id, contact.backend]);
+
+  useEffect(() => {
+    setModelCatalog(null);
+    if (isRoom) return;
+    // During a rolling deploy the new frontend can briefly meet the old gateway.
+    // Hide the picker until the models endpoint is available instead of surfacing a noisy 404.
+    void api.models(contact.id).then(setModelCatalog).catch(() => {});
+  }, [contact.id, contact.backend, contact.config.model, isRoom]);
 
   useEffect(() => {
     if (status.state === 'idle') {
@@ -127,6 +138,18 @@ export default function ChatPane({ contact, contacts, messages, status, user, on
     }
   };
 
+  const switchModel = async (model: string) => {
+    setSwitchingModel(true);
+    setSendError(null);
+    try {
+      await api.switchModel(contact.id, model);
+    } catch (e) {
+      setSendError((e as Error).message);
+    } finally {
+      setSwitchingModel(false);
+    }
+  };
+
   const busy =
     status.state === 'thinking' || status.state === 'streaming' || status.state.startsWith('tool:');
   const st = statusText(status);
@@ -161,6 +184,22 @@ export default function ChatPane({ contact, contacts, messages, status, user, on
           <button className="interrupt-btn" onClick={() => void api.interrupt(contact.id)}>
             ⏹ 打断
           </button>
+        )}
+        {!isRoom && modelCatalog && modelCatalog.models.length > 0 && (
+          <select
+            className="model-select"
+            title={modelCatalog.warning ?? '切换模型会开启新的底层会话，并自动衔接近期聊天'}
+            aria-label="切换模型"
+            value={modelCatalog.current}
+            disabled={busy || switchingModel}
+            onChange={(e) => void switchModel(e.target.value)}
+          >
+            {modelCatalog.models.map((model) => (
+              <option key={model.id || '__default'} value={model.id} title={model.description}>
+                {model.label}
+              </option>
+            ))}
+          </select>
         )}
         <button className="gear-btn" title="联系人设置" onClick={onSettings}>
           ⚙

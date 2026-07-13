@@ -7,6 +7,9 @@ app/server/data/
 app/server/config.json
 app/server/agents/
 app/*.log
+app/worker/config.json
+app/worker/worker-state.json
+app/worker/worker-state.json.tmp
 
 # 大文件/媒体不进 git（放库外或本地）
 *.mp4

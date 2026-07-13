@@ -4,6 +4,7 @@ import ChatPane from './components/ChatPane';
 import ContactConfig from './components/ContactConfig';
 import ContactList from './components/ContactList';
 import UserConfig from './components/UserConfig';
+import WorkerPanel from './components/WorkerPanel';
 
 export default function App() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -14,6 +15,7 @@ export default function App() {
   const [configFor, setConfigFor] = useState<{ contact: Contact | null } | null>(null);
   const [user, setUser] = useState<UserProfile>({ name: 'Owner', avatar: '👤', color: '#6366f1' });
   const [userConfigOpen, setUserConfigOpen] = useState(false);
+  const [workerPanelOpen, setWorkerPanelOpen] = useState(false);
 
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
@@ -146,6 +148,7 @@ export default function App() {
         onAdd={() => setConfigFor({ contact: null })}
         user={user}
         onUserClick={() => setUserConfigOpen(true)}
+        onWorkers={() => setWorkerPanelOpen(true)}
       />
       {selected ? (
         <ChatPane
@@ -169,6 +172,7 @@ export default function App() {
         />
       )}
       {userConfigOpen && <UserConfig user={user} onClose={() => setUserConfigOpen(false)} />}
+      {workerPanelOpen && <WorkerPanel onClose={() => setWorkerPanelOpen(false)} />}
     </div>
   );
 }

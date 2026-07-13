@@ -847,6 +847,33 @@ export class AgentManager {
     }
   }
 
+  /** A model switch must not cut through an in-flight DM or room-member turn. */
+  isAgentBusy(contactId: string): boolean {
+    for (const [key, rt] of this.runtimes) {
+      if (key !== contactId && !key.endsWith(`:${contactId}`)) continue;
+      if (rt.state === 'thinking' || rt.state === 'streaming' || rt.state.startsWith('tool:')) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Apply a new model without ever resuming a thread created by the old model. */
+  async switchContactModel(contact: ContactRow): Promise<void> {
+    const dm = this.runtimes.get(contact.id);
+    if (dm) await dm.invalidateCliContext();
+    else deactivateSession(this.deps.db, contact.id, '');
+
+    for (const [key, rt] of this.runtimes) {
+      if (key.endsWith(`:${contact.id}`)) await rt.invalidateCliContext();
+    }
+    // Also cover rooms that have not created an in-memory runtime since gateway boot.
+    this.deps.db
+      .prepare('UPDATE sessions SET active = 0 WHERE member_id = ? AND active = 1')
+      .run(contact.id);
+    await this.notifyContactUpdated(contact);
+  }
+
   async resetConversation(contact: ContactRow): Promise<void> {
     if (contact.kind === 'room') {
       for (const rt of this.runtimesOfRoom(contact.id)) await rt.reset();

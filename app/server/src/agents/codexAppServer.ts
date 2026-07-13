@@ -11,6 +11,13 @@ export interface CodexAppServerBackendOpts {
   log: (msg: string) => void;
 }
 
+export interface CodexModelOption {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
 interface PendingRequest {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
@@ -34,6 +41,51 @@ export class CodexAppServerBackend implements AgentBackend {
   private toolNames = new Map<string, string>();
 
   constructor(private opts: CodexAppServerBackendOpts) {}
+
+  /** Query the account-aware picker catalog without creating a conversation thread. */
+  static async listModels(opts: {
+    cliPath: string;
+    cwd: string;
+    log: (msg: string) => void;
+  }): Promise<CodexModelOption[]> {
+    const client = new CodexAppServerBackend({
+      ...opts,
+      sandbox: 'read-only',
+      turnTimeoutMs: 20_000,
+    });
+    try {
+      client.spawn();
+      await client.request('initialize', {
+        clientInfo: { name: 'ai_hub', title: 'ai-hub', version: '0.1.0' },
+        capabilities: { experimentalApi: true },
+      });
+      client.proc?.send({ method: 'initialized', params: {} });
+
+      const models: CodexModelOption[] = [];
+      let cursor: string | null = null;
+      do {
+        const result = await client.request('model/list', {
+          cursor,
+          limit: 100,
+          includeHidden: false,
+        });
+        for (const model of result?.data ?? []) {
+          const id = String(model.model ?? model.id ?? '').trim();
+          if (!id || models.some((m) => m.id === id)) continue;
+          models.push({
+            id,
+            label: String(model.displayName ?? id),
+            description: typeof model.description === 'string' ? model.description : undefined,
+            isDefault: model.isDefault === true,
+          });
+        }
+        cursor = typeof result?.nextCursor === 'string' ? result.nextCursor : null;
+      } while (cursor && models.length < 500);
+      return models;
+    } finally {
+      await client.stop();
+    }
+  }
 
   async start(resumeToken: string | null): Promise<void> {
     this.spawn();

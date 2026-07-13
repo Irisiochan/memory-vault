@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import type { AgentManager } from '../agents/manager.js';
+import { CodexAppServerBackend, type CodexModelOption } from '../agents/codexAppServer.js';
+import type { HubConfig } from '../config.js';
 import type { Db, ContactRow } from '../db.js';
 import type { SseHub } from '../sse.js';
 
@@ -15,8 +17,51 @@ function isMaskedKey(v: unknown): boolean {
   return typeof v === 'string' && (v === '' || v.startsWith('••••'));
 }
 
-export function contactsRouter(db: Db, sse: SseHub, manager: AgentManager): Router {
+interface ModelOption {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
+const CLAUDE_MODELS: ModelOption[] = [
+  { id: '', label: '默认（Claude CLI 自动选择）', isDefault: true },
+  { id: 'sonnet', label: 'Sonnet' },
+  { id: 'opus', label: 'Opus' },
+  { id: 'haiku', label: 'Haiku' },
+  { id: 'fable', label: 'Fable' },
+];
+
+function customModels(cfg: Record<string, any>): ModelOption[] {
+  if (!Array.isArray(cfg.modelOptions)) return [];
+  return cfg.modelOptions
+    .map((v: unknown) => {
+      if (typeof v === 'string') return { id: v, label: v };
+      if (v && typeof v === 'object') {
+        const item = v as Record<string, unknown>;
+        const id = typeof item.id === 'string' ? item.id.trim() : '';
+        if (id) return { id, label: typeof item.label === 'string' ? item.label : id };
+      }
+      return null;
+    })
+    .filter((v: ModelOption | null): v is ModelOption => v !== null);
+}
+
+function dedupeModels(models: ModelOption[], current: string): ModelOption[] {
+  const all = current && !models.some((m) => m.id === current)
+    ? [{ id: current, label: current }, ...models]
+    : models;
+  return all.filter((model, index) => all.findIndex((m) => m.id === model.id) === index);
+}
+
+export function contactsRouter(
+  db: Db,
+  sse: SseHub,
+  manager: AgentManager,
+  hubConfig: HubConfig
+): Router {
   const r = Router();
+  let codexCache: { expires: number; models: CodexModelOption[] } | null = null;
 
   const publicRow = (c: ContactRow) => ({
     ...c,
@@ -37,6 +82,87 @@ export function contactsRouter(db: Db, sse: SseHub, manager: AgentManager): Rout
       .all() as (ContactRow & { last_content: string | null; last_at: string | null })[];
 
     res.json({ contacts: rows.map((c) => publicRow(c)) });
+  });
+
+  r.get('/:id/models', async (req, res) => {
+    const contact = db
+      .prepare('SELECT * FROM contacts WHERE id = ? AND enabled = 1')
+      .get(req.params.id) as ContactRow | undefined;
+    if (!contact) return res.status(404).json({ error: 'contact not found' });
+    if (contact.kind === 'room') return res.json({ models: [], current: '', dynamic: false });
+
+    const cfg = JSON.parse(contact.config || '{}');
+    const current = typeof cfg.model === 'string' ? cfg.model : '';
+    let models: ModelOption[] = [];
+    let dynamic = false;
+    let warning: string | undefined;
+
+    if (contact.backend === 'codex') {
+      try {
+        if (!codexCache || codexCache.expires < Date.now()) {
+          codexCache = {
+            expires: Date.now() + 10 * 60_000,
+            models: await CodexAppServerBackend.listModels({
+              cliPath: cfg.cliPath ?? hubConfig.codex.cliPath,
+              cwd: hubConfig.agentsDir,
+              log: (m) => console.log(`  [models] ${m}`),
+            }),
+          };
+        }
+        models = codexCache.models;
+        dynamic = true;
+      } catch (e: any) {
+        warning = `Codex 模型列表暂时不可用：${e.message}`;
+      }
+      models = [{ id: '', label: '默认（Codex 自动选择）' }, ...models, ...customModels(cfg)];
+    } else if (contact.backend === 'claude-cli') {
+      models = [...CLAUDE_MODELS, ...customModels(cfg)];
+    } else {
+      models = [...customModels(cfg)];
+      if (current) models.unshift({ id: current, label: current });
+    }
+
+    res.json({ models: dedupeModels(models, current), current, dynamic, warning });
+  });
+
+  r.patch('/:id/model', async (req, res) => {
+    const contact = db
+      .prepare('SELECT * FROM contacts WHERE id = ? AND enabled = 1')
+      .get(req.params.id) as ContactRow | undefined;
+    if (!contact) return res.status(404).json({ error: 'contact not found' });
+    if (contact.kind === 'room') return res.status(400).json({ error: '群聊请分别切换成员模型' });
+    if (manager.isAgentBusy(contact.id)) {
+      return res.status(409).json({ error: '正在回复，等这轮结束再切模型' });
+    }
+
+    const model = typeof req.body?.model === 'string' ? req.body.model.trim() : null;
+    if (model === null || model.length > 160) return res.status(400).json({ error: 'model 无效' });
+    const cfg = JSON.parse(contact.config || '{}');
+    const previous = typeof cfg.model === 'string' ? cfg.model : '';
+    if (previous === model) return res.json(publicRow(contact));
+
+    if (model) cfg.model = model;
+    else delete cfg.model;
+    db.prepare('UPDATE contacts SET config = ? WHERE id = ?').run(JSON.stringify(cfg), contact.id);
+    const updated = db.prepare('SELECT * FROM contacts WHERE id = ?').get(contact.id) as ContactRow;
+    await manager.switchContactModel(updated);
+
+    const label = (value: string) => value || '默认模型';
+    const result = db
+      .prepare(
+        `INSERT INTO messages (contact_id, sender, role, kind, content, status, meta)
+         VALUES (?, 'system', 'system', 'text', ?, 'done', ?)`
+      )
+      .run(
+        contact.id,
+        `已从 ${label(previous)} 切换到 ${label(model)}`,
+        JSON.stringify({ event: 'model-switch', from: previous, to: model })
+      );
+    const message = db.prepare('SELECT * FROM messages WHERE id = ?').get(Number(result.lastInsertRowid));
+    sse.broadcast('message', message);
+    const payload = publicRow(updated);
+    sse.broadcast('contact', payload);
+    res.json(payload);
   });
 
   r.post('/', async (req, res) => {

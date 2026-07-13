@@ -9,6 +9,7 @@ interface Props {
   onSelect(id: string): void;
   onAdd(): void;
   onUserClick(): void;
+  onWorkers(): void;
 }
 
 function stateLabel(state: string): string {
@@ -19,12 +20,13 @@ function stateLabel(state: string): string {
   return '';
 }
 
-export default function ContactList({ contacts, statuses, unread, selectedId, user, onSelect, onAdd, onUserClick }: Props) {
+export default function ContactList({ contacts, statuses, unread, selectedId, user, onSelect, onAdd, onUserClick, onWorkers }: Props) {
   return (
     <aside className="contact-list">
       <header className="contact-list-header">
         <h1>ai-hub</h1>
         <span className="header-btns">
+          <button className="add-btn" title="PC Worker 任务" onClick={onWorkers}>🖥</button>
           <button
             className="user-btn avatar"
             title={`${user.name} · 改我的资料`}
