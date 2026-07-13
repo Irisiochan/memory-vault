@@ -16,6 +16,7 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
   const isApi = !isRoom && (creating || contact?.backend === 'api');
   const dmContacts = contacts.filter((c) => c.kind !== 'room');
   const [members, setMembers] = useState<string[]>((cfg.members as string[]) ?? []);
+  const [reactionRounds, setReactionRounds] = useState<number>(cfg.reactionRounds ?? 1);
   const toggleMember = (id: string) =>
     setMembers((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
 
@@ -41,7 +42,7 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
 
   const buildConfig = (): Record<string, unknown> => {
     if (advanced) return JSON.parse(rawJson);
-    if (isRoom) return { ...cfg, members };
+    if (isRoom) return { ...cfg, members, reactionRounds };
     if (!isApi) return cfg; // 非 api 后端：外观改动不碰 config
     return {
       ...cfg,
@@ -155,6 +156,19 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
               ))}
               <p className="field-hint">
                 群里发消息可 @名字 点名，@all 或不 @ 则全员各答一次；成员的发言不会互相触发。
+              </p>
+              <label className="field" style={{ maxWidth: 160 }}>
+                接话轮数（0-3）
+                <input
+                  type="number"
+                  min={0}
+                  max={3}
+                  value={reactionRounds}
+                  onChange={(e) => setReactionRounds(Math.min(3, Math.max(0, Number(e.target.value) || 0)))}
+                />
+              </label>
+              <p className="field-hint">
+                每轮点名发言后，成员会看到彼此的新发言并可自然接话（或沉默）。0 = 关闭，回到纯点名制。
               </p>
             </fieldset>
           )}

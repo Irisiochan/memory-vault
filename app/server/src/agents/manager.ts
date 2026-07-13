@@ -27,9 +27,14 @@ import { CodexAppServerBackend } from './codexAppServer.js';
 import { DirectApiBackend } from './directApi.js';
 import type { AgentBackend, TurnHandle } from './types.js';
 
+export type RoomTurnOutcome = 'spoke' | 'silent' | 'error';
+
 type QueueItem =
   | { kind: 'dm'; userMessageId: number; text: string }
-  | { kind: 'room-ping' }; // 群聊投递标记：出队时才构建增量 transcript，天然合批
+  // 群聊回合：出队时才构建增量 transcript；reaction = 接话轮（可 [PASS] 沉默）
+  | { kind: 'room-turn'; mode: 'normal' | 'reaction'; resolve: (r: RoomTurnOutcome) => void };
+
+const PASS_RE = /^[\s（(【\[]*(pass|不接话|沉默|skip)[\s）)】\]。.!～~]*$/i;
 
 const QUEUE_CAP = 5;
 const CRASH_LOCKOUT = 3;
@@ -97,11 +102,12 @@ export class AgentRuntime {
     return 'queued';
   }
 
-  enqueueRoomPing(): void {
-    if (!this.queue.some((q) => q.kind === 'room-ping')) {
-      this.queue.push({ kind: 'room-ping' });
-    }
-    void this.run();
+  /** 群聊回合：编排器 await 结果（spoke/silent/error），实现顺序发言与接话轮。 */
+  runRoomTurn(mode: 'normal' | 'reaction'): Promise<RoomTurnOutcome> {
+    return new Promise((resolve) => {
+      this.queue.push({ kind: 'room-turn', mode, resolve });
+      void this.run();
+    });
   }
 
   interrupt(): void {
@@ -137,7 +143,7 @@ export class AgentRuntime {
     });
   }
 
-  /** 发言人显示名：user → owner 资料名，其余查联系人表。 */
+  /** 发言人显示名：user → owner 的资料名，其余查联系人表。 */
   private nameOf(sender: string): string {
     if (sender === 'user') return getUserProfile(this.deps.db).name;
     if (sender === this.agent.id) return this.agent.name;
@@ -228,6 +234,8 @@ export class AgentRuntime {
       '- 你收到的群消息带「名字：」前缀标明发言人；你自己发言直接说内容，不要加前缀。',
       '- 群里 @某人 不会自动召唤对方。想让谁跟进就直接说出来，由用户决定叫谁。',
       '- 群聊节奏：简短、有自己观点、不复读别人说过的，不用每条都接。',
+      '- 每轮发言后有"接话轮"：你会看到其他成员刚说的话，可以自然接话、反驳、补充；',
+      '  没什么想说的就只回 [PASS]（会被网关静默处理，不丢人）。宁可 PASS 也别硬找话。',
       '- 其他成员的错误/掉线由网关处理，你不会看到，也不用分析。',
     ].join('\n');
   }
@@ -405,6 +413,15 @@ export class AgentRuntime {
     const { sse } = this.deps;
     const convoId = this.convo.id;
 
+    // 群回合结果只回传一次
+    let settled = false;
+    const settle = (r: RoomTurnOutcome) => {
+      if (item.kind === 'room-turn' && !settled) {
+        settled = true;
+        item.resolve(r);
+      }
+    };
+
     if (this.lockedOut()) {
       const row = this.insertMessage({
         role: 'system',
@@ -416,14 +433,18 @@ export class AgentRuntime {
       sse.broadcast('message', row);
       this.setState('error', 'crash lockout');
       this.queue = [];
+      settle('error');
       return;
     }
 
     // 群聊：出队时构建增量投递（合批天然完成）
     let delivery: { text: string; upToId: number } | null = null;
-    if (item.kind === 'room-ping') {
+    if (item.kind === 'room-turn') {
       delivery = this.buildRoomDelivery();
-      if (!delivery) return; // 没有新东西可回
+      if (!delivery) {
+        settle('silent'); // 没有新东西可回
+        return;
+      }
     }
 
     try {
@@ -441,6 +462,7 @@ export class AgentRuntime {
       });
       sse.broadcast('message', row);
       this.setState('error', e.message);
+      settle('error');
       return;
     }
 
@@ -454,14 +476,17 @@ export class AgentRuntime {
 
     // 本轮实际投喂的文本
     const sourceText = item.kind === 'dm' ? item.text : delivery!.text;
+    const reactionSuffix =
+      '（接话机会：看完上面新发言，想接就简短接一句；没什么可补充就只回 [PASS]。）';
+    const normalSuffix = '（轮到你了。实在没话说也可以只回 [PASS]。）';
     let turnText: string;
     if (item.kind === 'dm') {
       turnText = item.text;
     } else if (this.agent.backend === 'api') {
       // api 成员的群历史（含最新消息）由 roomMode history 携带，这里只需提示发言
-      turnText = '（群里有新消息，见对话历史。轮到你发言，直接说内容。）';
+      turnText = `（群里有新消息，见对话历史。）${item.kind === 'room-turn' && item.mode === 'reaction' ? reactionSuffix : normalSuffix}`;
     } else {
-      turnText = delivery!.text;
+      turnText = `${delivery!.text}\n\n${item.kind === 'room-turn' && item.mode === 'reaction' ? reactionSuffix : normalSuffix}`;
     }
 
     const mem = this.memCfg();
@@ -546,7 +571,22 @@ export class AgentRuntime {
               sse.broadcast('message', this.updateMessage(thinkingRow.id, thinkingBuf, 'done'));
             }
             const finalText = ev.finalText || textBuf;
-            if (textRow) {
+            const passed = this.isRoom && PASS_RE.test(finalText.trim());
+
+            if (passed) {
+              // 成员选择沉默：把已流出去的气泡收回（软删 + prune）
+              if (textRow) {
+                this.deps.db
+                  .prepare('UPDATE messages SET deleted = 1, status = ? WHERE id = ?')
+                  .run('done', textRow.id);
+                sse.broadcast('prune', { contactId: convoId, ids: [textRow.id] });
+              }
+              if (thinkingRow) {
+                this.deps.db.prepare('UPDATE messages SET deleted = 1 WHERE id = ?').run(thinkingRow.id);
+                sse.broadcast('prune', { contactId: convoId, ids: [thinkingRow.id] });
+              }
+              this.log('passed (silent)');
+            } else if (textRow) {
               sse.broadcast(
                 'message',
                 this.updateMessage(textRow.id, finalText, 'done', { usage: ev.usage })
@@ -562,12 +602,14 @@ export class AgentRuntime {
               });
               sse.broadcast('message', row);
             }
-            if (item.kind === 'room-ping' && delivery) {
+            if (item.kind === 'room-turn' && delivery) {
               setLastSeen(this.deps.db, convoId, this.agent.id, delivery.upToId);
             }
             this.crashes = [];
             this.setState('idle');
-            if (this.deps.vault && mem.capture) {
+            // 自动捕捉只在 DM 里跑：群消息由派发层按"owner 原话、群级一次"捕捉，
+            // 成员发言（带名字前缀的 transcript）永不参与——防记忆污染
+            if (!this.isRoom && this.deps.vault && mem.capture) {
               void maybeCapture(
                 this.deps.vault,
                 { id: this.agent.id, name: this.agent.name },
@@ -577,6 +619,7 @@ export class AgentRuntime {
                 (m) => this.log(m)
               ).catch(() => {});
             }
+            settle(passed ? 'silent' : 'spoke');
             break;
           }
 
@@ -600,12 +643,14 @@ export class AgentRuntime {
               this.backend = null;
             }
             this.setState('error', ev.message);
+            settle('error');
             break;
           }
         }
       }
     } finally {
       this.currentHandle = null;
+      settle('error'); // 流意外结束的兜底
       if (this.state === 'streaming' || this.state === 'thinking' || this.state.startsWith('tool:')) {
         this.setState('idle');
       }
@@ -666,13 +711,65 @@ export class AgentManager {
     return hit.length > 0 ? hit : members;
   }
 
-  /** 用户在群里发言 → 点名派发（每人各回一次，输出不互相触发）。 */
+  private roomChains = new Map<string, Promise<void>>();
+
+  /** 用户在群里发言 → 顺序点名轮 + 接话轮（输出不互相触发，轮数硬上限）。
+   *  记忆捕捉在这里做且只做一次：只看 owner 的原话，成员发言永不参与。 */
   dispatchRoomMessage(room: ContactRow, content: string): string[] {
     const targets = this.parseTargets(room, content);
-    for (const member of targets) {
-      this.getRoomMember(room, member).enqueueRoomPing();
+
+    const roomCfg = JSON.parse(room.config || '{}');
+    const mem: MemoryConfig = { ...this.deps.config.memory, ...(roomCfg.memory ?? {}) };
+    if (this.deps.vault && mem.capture) {
+      void maybeCapture(
+        this.deps.vault,
+        { id: room.id, name: room.name },
+        getUserProfile(this.deps.db).name,
+        content,
+        '',
+        (m) => console.log(`  [${room.name}] ${m}`)
+      ).catch(() => {});
     }
+
+    // 同一个群的轮次串行：用户连发消息时排队，不交叉
+    const prev = this.roomChains.get(room.id) ?? Promise.resolve();
+    this.roomChains.set(
+      room.id,
+      prev
+        .then(() => this.runRoomRound(room, targets))
+        .catch((e) => console.error(`  [${room.name}] round error:`, e))
+    );
     return targets.map((t) => t.id);
+  }
+
+  private shuffle<T>(arr: T[]): T[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  /** 一轮群聊：点名成员按随机顺序依次发言（后发言者看得见先发言者），
+   *  然后跑至多 reactionRounds 轮接话——全体成员看过新发言后可接话或 [PASS]。 */
+  private async runRoomRound(room: ContactRow, targets: ContactRow[]): Promise<void> {
+    for (const member of this.shuffle(targets)) {
+      await this.getRoomMember(room, member).runRoomTurn('normal');
+    }
+
+    const roomCfg = JSON.parse(room.config || '{}');
+    const maxReactionRounds = Math.min(Math.max(Number(roomCfg.reactionRounds ?? 1), 0), 3);
+    const everyone = this.roomMembers(room);
+
+    for (let round = 0; round < maxReactionRounds; round++) {
+      let anySpoke = false;
+      for (const member of this.shuffle(everyone)) {
+        const outcome = await this.getRoomMember(room, member).runRoomTurn('reaction');
+        if (outcome === 'spoke') anySpoke = true;
+      }
+      if (!anySpoke) break; // 全员沉默，话题自然结束
+    }
   }
 
   /** 会话状态聚合（列表小圆点用）：DM 直取；群取最忙成员。 */
