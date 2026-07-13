@@ -158,7 +158,7 @@ export class DirectApiBackend implements AgentBackend {
     }
 
     let acc = '';
-    let usage: { input: number; output: number } | undefined;
+    let usage: { input: number; output: number; cacheCreation?: number; cacheRead?: number } | undefined;
     for await (const data of this.sseEvents(res)) {
       if (!data || data === '[DONE]') continue;
       let ev: any;
@@ -175,9 +175,19 @@ export class DirectApiBackend implements AgentBackend {
           queue.push({ type: 'thinking', text: ev.delta.thinking });
         }
       } else if (ev.type === 'message_start' && ev.message?.usage) {
-        usage = { input: ev.message.usage.input_tokens ?? 0, output: 0 };
+        usage = {
+          input: ev.message.usage.input_tokens ?? 0,
+          output: 0,
+          cacheCreation: ev.message.usage.cache_creation_input_tokens ?? 0,
+          cacheRead: ev.message.usage.cache_read_input_tokens ?? 0,
+        };
       } else if (ev.type === 'message_delta' && ev.usage) {
-        usage = { input: usage?.input ?? 0, output: ev.usage.output_tokens ?? 0 };
+        usage = {
+          input: usage?.input ?? 0,
+          output: ev.usage.output_tokens ?? 0,
+          cacheCreation: usage?.cacheCreation ?? 0,
+          cacheRead: usage?.cacheRead ?? 0,
+        };
       } else if (ev.type === 'error') {
         throw new Error(ev.error?.message ?? 'stream error');
       }

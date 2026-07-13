@@ -6,6 +6,7 @@ export interface CodexAppServerBackendOpts {
   cwd: string;
   model?: string;
   developerInstructions?: string;
+  sandbox?: 'read-only' | 'workspace-write';
   turnTimeoutMs: number;
   log: (msg: string) => void;
 }
@@ -63,7 +64,7 @@ export class CodexAppServerBackend implements AgentBackend {
       ...extra,
       cwd: this.opts.cwd,
       approvalPolicy: 'never',
-      sandbox: 'read-only',
+      sandbox: this.opts.sandbox ?? 'read-only',
       personality: 'friendly',
       ...(this.opts.model ? { model: this.opts.model } : {}),
       ...(this.opts.developerInstructions

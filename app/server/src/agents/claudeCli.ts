@@ -295,7 +295,12 @@ export class ClaudeCliBackend implements AgentBackend {
     if (line.session_id) this.captureSession(line.session_id);
     if (!this.turn) return;
     const usage = line.usage
-      ? { input: line.usage.input_tokens ?? 0, output: line.usage.output_tokens ?? 0 }
+      ? {
+          input: line.usage.input_tokens ?? 0,
+          output: line.usage.output_tokens ?? 0,
+          cacheCreation: line.usage.cache_creation_input_tokens ?? 0,
+          cacheRead: line.usage.cache_read_input_tokens ?? 0,
+        }
       : undefined;
     if (line.is_error) {
       this.turn.push({

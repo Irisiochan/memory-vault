@@ -137,6 +137,10 @@ export default function ChatPane({ contact, contacts, messages, status, user, on
     if (quota.sevenDay) quotaBits.push(`周剩${quota.sevenDay.remainingPct}%`);
   }
   if (usage && (usage.today.input > 0 || usage.today.output > 0)) {
+    quotaBits.push(`本轮 ${fmtTokens(usage.last.input)}↑ ${fmtTokens(usage.last.output)}↓`);
+    if (usage.last.cacheRead > 0 || usage.last.cacheCreation > 0) {
+      quotaBits.push(`缓存 ${fmtTokens(usage.last.cacheRead)}读 ${fmtTokens(usage.last.cacheCreation)}建`);
+    }
     quotaBits.push(`今日 ${fmtTokens(usage.today.input)}↑ ${fmtTokens(usage.today.output)}↓`);
   }
 

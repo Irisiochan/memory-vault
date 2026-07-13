@@ -4,8 +4,15 @@ export type TurnEvent =
   | { type: 'thinking'; text: string }
   | { type: 'tool_use'; name: string; inputSummary: string }
   | { type: 'tool_result'; name: string; ok: boolean; summary: string }
-  | { type: 'done'; finalText: string; usage?: { input: number; output: number } }
+  | { type: 'done'; finalText: string; usage?: TokenUsage }
   | { type: 'error'; message: string; fatal: boolean };
+
+export interface TokenUsage {
+  input: number;
+  output: number;
+  cacheCreation?: number;
+  cacheRead?: number;
+}
 
 export interface TurnHandle {
   events: AsyncIterable<TurnEvent>;

@@ -83,6 +83,8 @@ export async function buildSessionPreamble(
   const guard = identityGuard(contact);
   return [
     '',
+    '# MEMORY_CONTEXT_PRELOADED',
+    '- 网关已经执行 get_context 并把结果完整注入本提示。禁止在本会话首轮再次调用 get_context；只有看到“记忆库上下文不可用”时才重试。',
     guard,
     '',
     '# 记忆库上下文（网关自动注入，无需再调用 get_context）',
@@ -113,6 +115,7 @@ export async function buildTurnBlock(
   if (keywords.length === 0) return null;
 
   const lines: string[] = [];
+  const maxEntries = 3;
   let budget = maxChars;
 
   for (const kw of keywords) {
@@ -134,8 +137,9 @@ export async function buildTurnBlock(
       seen.add(path);
       lines.push(entry);
       budget -= entry.length + 1;
+      if (lines.length >= maxEntries) break;
     }
-    if (budget <= 0) break;
+    if (budget <= 0 || lines.length >= maxEntries) break;
   }
 
   if (lines.length === 0) return null;

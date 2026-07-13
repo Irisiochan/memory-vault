@@ -56,6 +56,8 @@ export class AgentRuntime {
   private running = false;
   private backend: AgentBackend | null = null;
   private backendStartedAt = 0;
+  private sessionInputTokens = 0;
+  private rolloverAfterTurn = false;
   private currentHandle: TurnHandle | null = null;
   private crashes: number[] = [];
   private seenMemoryPaths = new Set<string>();
@@ -273,14 +275,26 @@ export class AgentRuntime {
     }
 
     if (this.agent.backend === 'claude-cli') {
-      const cwd = path.resolve(this.deps.config.agentsDir, cfg.cwd ?? this.agent.id);
+      const access = cfg.projectAccess ?? {};
+      const cwd = access.enabled
+        ? path.resolve(String(access.workspace ?? ''))
+        : path.resolve(this.deps.config.agentsDir, cfg.cwd ?? this.agent.id);
+      if (access.enabled && (!access.workspace || path.parse(cwd).root === cwd || !fs.existsSync(cwd))) {
+        throw new Error('项目写权限已开启，但 workspace 无效、是磁盘根目录或不存在');
+      }
       fs.mkdirSync(cwd, { recursive: true });
+      const writeTools = access.enabled
+        ? ['Read', 'Grep', 'Glob', 'Write', 'Edit', ...(access.allowShell ? ['Bash'] : [])]
+        : [];
+      const allowedTools = [...new Set([...(cfg.allowedTools ?? []), ...writeTools])];
+      const disallowedTools = (cfg.disallowedTools ?? []).filter((t: string) => !writeTools.includes(t));
+      if (access.enabled) this.log(`PROJECT WRITE ENABLED: ${cwd} (shell=${!!access.allowShell})`);
       this.backend = new ClaudeCliBackend({
         cliPath: cfg.cliPath ?? this.deps.config.claude.cliPath,
         cwd,
         model: cfg.model ?? undefined,
-        allowedTools: cfg.allowedTools ?? undefined,
-        disallowedTools: cfg.disallowedTools ?? undefined,
+        allowedTools: allowedTools.length ? allowedTools : undefined,
+        disallowedTools: disallowedTools.length ? disallowedTools : undefined,
         appendSystemPrompt:
           [cfg.appendSystemPrompt, preamble].filter(Boolean).join('\n') || undefined,
         permissionMode: cfg.permissionMode ?? undefined,
@@ -289,14 +303,22 @@ export class AgentRuntime {
         log: (m) => this.log(m),
       });
     } else if (this.agent.backend === 'codex') {
-      const cwd = path.resolve(this.deps.config.agentsDir, cfg.cwd ?? this.agent.id);
+      const access = cfg.projectAccess ?? {};
+      const cwd = access.enabled
+        ? path.resolve(String(access.workspace ?? ''))
+        : path.resolve(this.deps.config.agentsDir, cfg.cwd ?? this.agent.id);
+      if (access.enabled && (!access.workspace || path.parse(cwd).root === cwd || !fs.existsSync(cwd))) {
+        throw new Error('项目写权限已开启，但 workspace 无效、是磁盘根目录或不存在');
+      }
       fs.mkdirSync(cwd, { recursive: true });
+      if (access.enabled) this.log(`PROJECT WRITE ENABLED: ${cwd}`);
       this.backend = new CodexAppServerBackend({
         cliPath: cfg.cliPath ?? this.deps.config.codex.cliPath,
         cwd,
         model: cfg.model ?? undefined,
         developerInstructions:
           [cfg.developerInstructions, preamble].filter(Boolean).join('\n') || undefined,
+        sandbox: access.enabled ? 'workspace-write' : 'read-only',
         turnTimeoutMs: this.deps.config.codex.turnTimeoutMs,
         log: (m) => this.log(m),
       });
@@ -607,6 +629,17 @@ export class AgentRuntime {
             }
             this.crashes = [];
             this.setState('idle');
+            if (!this.isRoom || item.kind === 'room-turn') {
+              const u = ev.usage;
+              this.sessionInputTokens +=
+                (u?.input ?? 0) + (u?.cacheCreation ?? 0) + (u?.cacheRead ?? 0);
+              const cfg = JSON.parse(this.agent.config || '{}');
+              const threshold = Math.max(Number(cfg.maxSessionInputTokens ?? 120000), 0);
+              if (this.agent.backend !== 'api' && threshold > 0 && this.sessionInputTokens >= threshold) {
+                this.rolloverAfterTurn = true;
+                this.log(`session token threshold reached (${this.sessionInputTokens}/${threshold}) — rolling over`);
+              }
+            }
             // 自动捕捉只在 DM 里跑：群消息由派发层按"owner 原话、群级一次"捕捉，
             // 成员发言（带名字前缀的 transcript）永不参与——防记忆污染
             if (!this.isRoom && this.deps.vault && mem.capture) {
@@ -651,6 +684,14 @@ export class AgentRuntime {
     } finally {
       this.currentHandle = null;
       settle('error'); // 流意外结束的兜底
+      if (this.rolloverAfterTurn) {
+        this.rolloverAfterTurn = false;
+        this.sessionInputTokens = 0;
+        deactivateSession(this.deps.db, this.convo.id, this.isRoom ? this.memberId : undefined);
+        await this.backend?.stop();
+        this.backend = null;
+        this.seenMemoryPaths.clear();
+      }
       if (this.state === 'streaming' || this.state === 'thinking' || this.state.startsWith('tool:')) {
         this.setState('idle');
       }
@@ -700,18 +741,23 @@ export class AgentManager {
   parseTargets(room: ContactRow, content: string): ContactRow[] {
     const members = this.roomMembers(room);
     if (members.length === 0) return [];
+    const cfg = JSON.parse(room.config || '{}');
     const mentions = [...content.matchAll(/@([^\s@，。！？、,!?：:；;]+)/g)].map((m) =>
       m[1].toLowerCase()
     );
-    if (mentions.length === 0) return members;
+    if (mentions.length === 0) return cfg.respondAllByDefault === true ? members : [];
     if (mentions.some((m) => m === 'all' || m === '所有人' || m === '大家')) return members;
     const hit = members.filter(
       (c) => mentions.includes(c.id.toLowerCase()) || mentions.includes(c.name.toLowerCase())
     );
-    return hit.length > 0 ? hit : members;
+    return hit;
   }
 
   private roomChains = new Map<string, Promise<void>>();
+  private invalidationBatches = new Map<
+    string,
+    { timer: NodeJS.Timeout; contact: ContactRow; waiters: Array<() => void> }
+  >();
 
   /** 用户在群里发言 → 顺序点名轮 + 接话轮（输出不互相触发，轮数硬上限）。
    *  记忆捕捉在这里做且只做一次：只看 owner 的原话，成员发言永不参与。 */
@@ -730,6 +776,7 @@ export class AgentManager {
         (m) => console.log(`  [${room.name}] ${m}`)
       ).catch(() => {});
     }
+    if (targets.length === 0) return [];
 
     // 同一个群的轮次串行：用户连发消息时排队，不交叉
     const prev = this.roomChains.get(room.id) ?? Promise.resolve();
@@ -810,14 +857,31 @@ export class AgentManager {
   }
 
   /** 删除消息后的诚实处理：DM 单 runtime；群里全体成员会话重置。 */
-  async invalidateConversation(contact: ContactRow): Promise<void> {
-    if (contact.kind === 'room') {
-      for (const member of this.roomMembers(contact)) {
-        await this.getRoomMember(contact, member).invalidateCliContext();
-      }
-    } else {
-      await this.get(contact).invalidateCliContext();
-    }
+  invalidateConversation(contact: ContactRow): Promise<void> {
+    return new Promise((resolve) => {
+      const existing = this.invalidationBatches.get(contact.id);
+      if (existing) clearTimeout(existing.timer);
+      const waiters = existing?.waiters ?? [];
+      waiters.push(resolve);
+      const timer = setTimeout(() => {
+        const batch = this.invalidationBatches.get(contact.id);
+        this.invalidationBatches.delete(contact.id);
+        void (async () => {
+          try {
+            if (contact.kind === 'room') {
+              for (const member of this.roomMembers(contact)) {
+                await this.getRoomMember(contact, member).invalidateCliContext();
+              }
+            } else {
+              await this.get(contact).invalidateCliContext();
+            }
+          } finally {
+            for (const done of batch?.waiters ?? waiters) done();
+          }
+        })();
+      }, 300);
+      this.invalidationBatches.set(contact.id, { timer, contact, waiters });
+    });
   }
 
   async notifyContactUpdated(contact: ContactRow): Promise<void> {

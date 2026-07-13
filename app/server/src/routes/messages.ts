@@ -97,21 +97,28 @@ export function messagesRouter(db: Db, sse: SseHub, manager: AgentManager): Rout
     const rows = db
       .prepare(
         `SELECT meta, created_at FROM messages
-         WHERE contact_id = ? AND deleted = 0 AND role = 'assistant' AND meta LIKE '%usage%'`
+         WHERE contact_id = ? AND deleted = 0 AND role = 'assistant' AND meta LIKE '%usage%'
+         ORDER BY id ASC`
       )
       .all(contact.id) as { meta: string; created_at: string }[];
     const today = new Date().toISOString().slice(0, 10);
-    const sum = { today: { input: 0, output: 0 }, total: { input: 0, output: 0 } };
+    const empty = () => ({ input: 0, output: 0, cacheCreation: 0, cacheRead: 0 });
+    const sum = { today: empty(), total: empty(), last: empty() };
     for (const r2 of rows) {
       try {
         const u = JSON.parse(r2.meta)?.usage;
         if (!u) continue;
         sum.total.input += u.input ?? 0;
         sum.total.output += u.output ?? 0;
+        sum.total.cacheCreation += u.cacheCreation ?? 0;
+        sum.total.cacheRead += u.cacheRead ?? 0;
         if (r2.created_at.startsWith(today)) {
           sum.today.input += u.input ?? 0;
           sum.today.output += u.output ?? 0;
+          sum.today.cacheCreation += u.cacheCreation ?? 0;
+          sum.today.cacheRead += u.cacheRead ?? 0;
         }
+        sum.last = { ...empty(), ...u };
       } catch {}
     }
     res.json(sum);

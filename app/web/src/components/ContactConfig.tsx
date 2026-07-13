@@ -11,12 +11,14 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
   const creating = contact === null;
   const cfg = (contact?.config ?? {}) as Record<string, any>;
   const mem = (cfg.memory ?? {}) as Record<string, any>;
+  const project = (cfg.projectAccess ?? {}) as Record<string, any>;
   const [createKind, setCreateKind] = useState<'api' | 'room'>('api');
   const isRoom = creating ? createKind === 'room' : contact?.kind === 'room';
   const isApi = !isRoom && (creating || contact?.backend === 'api');
   const dmContacts = contacts.filter((c) => c.kind !== 'room');
   const [members, setMembers] = useState<string[]>((cfg.members as string[]) ?? []);
   const [reactionRounds, setReactionRounds] = useState<number>(cfg.reactionRounds ?? 1);
+  const [respondAllByDefault, setRespondAllByDefault] = useState<boolean>(cfg.respondAllByDefault ?? false);
   const toggleMember = (id: string) =>
     setMembers((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]));
 
@@ -34,6 +36,10 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
   const [memInject, setMemInject] = useState<boolean>(mem.injectOnSpawn ?? true);
   const [memSearch, setMemSearch] = useState<boolean>(mem.searchPerTurn ?? true);
   const [memCapture, setMemCapture] = useState<boolean>(mem.capture ?? true);
+  const [projectEnabled, setProjectEnabled] = useState<boolean>(project.enabled ?? false);
+  const [projectWorkspace, setProjectWorkspace] = useState<string>(project.workspace ?? '');
+  const [projectShell, setProjectShell] = useState<boolean>(project.allowShell ?? false);
+  const [sessionTokenLimit, setSessionTokenLimit] = useState<number>(cfg.maxSessionInputTokens ?? 120000);
 
   const [advanced, setAdvanced] = useState(false);
   const [rawJson, setRawJson] = useState(() => JSON.stringify(cfg, null, 2));
@@ -42,8 +48,16 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
 
   const buildConfig = (): Record<string, unknown> => {
     if (advanced) return JSON.parse(rawJson);
-    if (isRoom) return { ...cfg, members, reactionRounds };
-    if (!isApi) return cfg; // 非 api 后端：外观改动不碰 config
+    if (isRoom) return { ...cfg, members, reactionRounds, respondAllByDefault };
+    if (!isApi) return {
+      ...cfg,
+      projectAccess: {
+        enabled: projectEnabled,
+        workspace: projectWorkspace.trim(),
+        allowShell: projectShell,
+      },
+      maxSessionInputTokens: sessionTokenLimit,
+    };
     return {
       ...cfg,
       provider,
@@ -155,8 +169,16 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
                 </label>
               ))}
               <p className="field-hint">
-                群里发消息可 @名字 点名，@all 或不 @ 则全员各答一次；成员的发言不会互相触发。
+                群里用 @名字 点名，@all 叫全员；默认无 @ 时不调用模型，避免无意消耗。
               </p>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={respondAllByDefault}
+                  onChange={(e) => setRespondAllByDefault(e.target.checked)}
+                />
+                无 @ 时默认全员响应（更热闹，也更耗 token）
+              </label>
               <label className="field" style={{ maxWidth: 160 }}>
                 接话轮数（0-3）
                 <input
@@ -242,6 +264,56 @@ export default function ContactConfig({ contact, contacts, onClose }: Props) {
                 </label>
               </fieldset>
             </>
+          )}
+
+          {!isRoom && !isApi && !advanced && (
+            <fieldset className="mem-toggles">
+              <legend>项目权限</legend>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={projectEnabled}
+                  onChange={(e) => setProjectEnabled(e.target.checked)}
+                />
+                允许这个联系人修改指定项目
+              </label>
+              {projectEnabled && (
+                <>
+                  <label className="field">
+                    项目工作区（必须已存在，不能填磁盘根目录）
+                    <input
+                      value={projectWorkspace}
+                      onChange={(e) => setProjectWorkspace(e.target.value)}
+                      placeholder="/opt/my-project 或 E:\\projects\\my-project"
+                    />
+                  </label>
+                  {contact?.backend === 'claude-cli' && (
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={projectShell}
+                        onChange={(e) => setProjectShell(e.target.checked)}
+                      />
+                      同时允许 Bash（可运行测试/构建，风险更高）
+                    </label>
+                  )}
+                  <p className="field-hint">
+                    默认仍只读。开启后 Claude 获得 Read/Write/Edit，Codex 使用 workspace-write；工具调用会保留在聊天审计记录中，可随时关闭。
+                  </p>
+                </>
+              )}
+              <label className="field" style={{ maxWidth: 240 }}>
+                换新会话阈值（输入 token，0 = 关闭）
+                <input
+                  type="number"
+                  min={0}
+                  step={10000}
+                  value={sessionTokenLimit}
+                  onChange={(e) => setSessionTokenLimit(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </label>
+              <p className="field-hint">达到阈值后自动开启新 thread，并注入最近对话的压缩回放与最新记忆。</p>
+            </fieldset>
           )}
 
           <label className="advanced-toggle">

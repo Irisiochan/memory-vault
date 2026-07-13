@@ -43,8 +43,16 @@ export interface UserProfile {
 }
 
 export interface Usage {
-  today: { input: number; output: number };
-  total: { input: number; output: number };
+  today: UsageBucket;
+  total: UsageBucket;
+  last: UsageBucket;
+}
+
+export interface UsageBucket {
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
 }
 
 export interface QuotaWindow {
