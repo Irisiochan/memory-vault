@@ -1,26 +1,30 @@
 {
-  "_说明": "把下面对应的 memory-vault 配置复制到客户端的 MCP 配置文件中",
-
-  "_桌面端_stdio模式": {
-    "_Claude_Desktop_配置文件位置": "%APPDATA%\\Claude\\claude_desktop_config.json（macOS: ~/Library/Application Support/Claude/）",
+  "_说明": "选择一种启动方式；路径必须换成你自己的绝对路径。",
+  "_桌面端_推荐_安装后命令": {
+    "_先执行": "python -m pip install -e <memory-vault 仓库绝对路径>",
     "mcpServers": {
       "memory-vault": {
-        "command": "python",
-        "args": ["<你的绝对路径>/memory-vault/_meta/mcp_server.py"]
+        "command": "memory-vault-mcp",
+        "args": ["--vault", "<memory-vault 仓库绝对路径>"]
       }
     }
   },
-
-  "_手机端_远程端_HTTP模式": {
-    "_前提": "电脑（或 VPS）上跑 python _meta/mcp_server.py --http，设备间用 Tailscale 组网",
+  "_桌面端_兼容_直接Python": {
+    "mcpServers": {
+      "memory-vault": {
+        "command": "python",
+        "args": ["<memory-vault 仓库绝对路径>/_meta/mcp_server.py"]
+      }
+    }
+  },
+  "_远程端_HTTP模式": {
+    "_启动": "memory-vault-mcp --vault <vault路径> --http",
     "_URL": "http://<服务器的Tailscale-IP>:8900/mcp",
     "_传输类型": "streamable-http",
-    "_可选密钥": "服务端设置 VAULT_TOKEN 环境变量后，客户端需带请求头 Authorization: Bearer <密钥> 或 X-Vault-Token: <密钥>"
+    "_可选密钥": "设置 VAULT_TOKEN 后，客户端需发送 Authorization: Bearer <密钥> 或 X-Vault-Token: <密钥>"
   },
-
-  "_ChatGPT连接器": {
-    "_前提": "需要公网 HTTPS，见 _meta/deploy/vps_setup.md 的公网入口一节",
-    "_URL": "https://<节点>.<tailnet>.ts.net/mcp-<秘密串>/mcp",
-    "_身份验证": "未授权（安全靠秘密路径）"
+  "_ChatGPT自定义App": {
+    "_说明": "ChatGPT 不直接启动本地 stdio 服务；需要可达的远程 MCP。当前可用性受套餐、工作区角色和管理员设置影响，见 README 的官方链接。",
+    "_URL示例": "https://<你的受保护域名>/<秘密路径>/mcp"
   }
 }

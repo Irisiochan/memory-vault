@@ -1,0 +1,13 @@
+services:
+  memory-vault-mcp:
+    build: .
+    environment:
+      MEMORY_VAULT_PATH: /vault
+      VAULT_GIT_SYNC: "off"
+      VAULT_ALLOWED_HOSTS: "memory-vault-mcp:*"
+      VAULT_TOKEN: "${VAULT_TOKEN:-}"
+    volumes:
+      - ./vault-data:/vault
+    ports:
+      - "127.0.0.1:8900:8900"
+    restart: unless-stopped

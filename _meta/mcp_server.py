@@ -20,6 +20,7 @@ import datetime
 import ipaddress
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -33,8 +34,43 @@ from mcp.server.fastmcp import FastMCP
 
 # ── 配置 ──────────────────────────────────────────────
 
-VAULT = Path(__file__).resolve().parent.parent
+CODE_ROOT = Path(__file__).resolve().parent.parent
+# A template clone is itself a ready-to-use vault. Packaged/embedded callers can
+# point at a different data directory with MEMORY_VAULT_PATH (or the console
+# launcher's --vault option) without ever falling through to a parent git repo.
+DEFAULT_VAULT = CODE_ROOT
+VAULT = Path(os.environ.get("MEMORY_VAULT_PATH", DEFAULT_VAULT)).expanduser().resolve()
+_repo_template = CODE_ROOT / "template"
+_package_template = CODE_ROOT / "memory_vault_mcp" / "template"
+TEMPLATE = _repo_template if _repo_template.exists() else _package_template
 ACTIVE_DIRS = ["memories", "tasks", "inbox", "projects", "diary"]
+
+
+def _initialize_vault() -> None:
+    """Initialize a new vault; never inject blank core memories into an old one."""
+    has_config = (VAULT / "_meta" / "vault_config.yaml").exists()
+    has_user_data = any(
+        directory.exists() and any(directory.iterdir())
+        for directory in (VAULT / name for name in ACTIVE_DIRS)
+    )
+    is_new = not has_config and not has_user_data
+    VAULT.mkdir(parents=True, exist_ok=True)
+    if TEMPLATE.exists():
+        for source in TEMPLATE.rglob("*"):
+            relative = source.relative_to(TEMPLATE)
+            if not is_new and relative.parts and relative.parts[0] == "memories":
+                continue
+            destination = VAULT / relative
+            if source.is_dir():
+                destination.mkdir(parents=True, exist_ok=True)
+            elif not destination.exists():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+    for dirname in [*ACTIVE_DIRS, "_archive/retired", "_meta"]:
+        (VAULT / dirname).mkdir(parents=True, exist_ok=True)
+
+
+_initialize_vault()
 
 # ── 个性化配置：_meta/vault_config.yaml ──
 _cfg_path = VAULT / "_meta" / "vault_config.yaml"
@@ -93,12 +129,21 @@ def _now_line() -> str:
 GIT_TIMEOUT = 30        # 秒，写路径 git 操作超时
 PULL_TIMEOUT = 10       # 秒，读路径 pull 超时
 PULL_INTERVAL = 300     # 秒，读路径 pull 节流间隔
+GIT_SYNC_MODE = os.environ.get("VAULT_GIT_SYNC", "auto").strip().lower()
+
+
+def _git_enabled() -> bool:
+    """Only sync when the vault itself is a git repo, never a parent source repo."""
+    return GIT_SYNC_MODE != "off" and (VAULT / ".git").exists()
 
 mcp = FastMCP(
     "memory-vault",
     instructions=(
         "记忆库主人的 AI 共享记忆库（自主模式：不需要主人逐条审批，出错可通过 git 回滚）。"
-        "每次新会话第一轮回复前，先调用 get_context 获取核心记忆、时间敏感事项和最近日常。"
+        "每次新会话第一轮回复前，调用 get_context 获取稳定核心记忆与长期记忆索引，"
+        "并调用 get_turn_time 和 get_task_context 获取当前时间与任务快照。"
+        "之后每轮调用 get_turn_time；仅在跨日、会话恢复、任务相关话题或任务变更后"
+        "再次调用 get_task_context，不要每轮重复注入任务快照。"
         "话题相关时用 search_vault 补充搜索，get_related 沿 [[链接]] 和标签联想相关记忆。"
         "写入分流："
         "确认的事实/偏好/关系变化 → write_memory；"
@@ -108,7 +153,7 @@ mcp = FastMCP(
         "修正已有记忆 → update_memory；整条作废 → archive_memory（软删除，git 可回滚）。"
         "写入正文时主动用 [[slug]] 链接相关记忆。"
         "核心身份文件由 vault_config.yaml 的 core_files 指定，只能追加不能重写。"
-        "所有写入自动 git 同步到全部设备。"
+        "所有写入都会保存到本地 vault；vault 自身配置为 git 仓库时自动同步到全部设备。"
     ),
 )
 
@@ -133,6 +178,8 @@ def _run_git(*args: str, timeout: int = GIT_TIMEOUT) -> subprocess.CompletedProc
 def _pull_if_stale() -> None:
     """读路径节流 pull：距上次 pull 超过 PULL_INTERVAL 才拉，失败静默用本地版本。"""
     global _last_pull
+    if not _git_enabled():
+        return
     with _git_lock:
         if time.time() - _last_pull < PULL_INTERVAL:
             return
@@ -146,22 +193,41 @@ def _pull_if_stale() -> None:
             _last_pull = time.time()
 
 
-def _git_sync(message: str) -> str:
-    """写路径同步：pull --rebase → add → commit → push。返回状态说明（拼进工具返回值）。"""
+def _git_sync(message: str, *changed_paths: Path) -> str:
+    """Commit only this tool call's files, then rebase and push.
+
+    Unrelated user changes must never be swept into an automatic memory commit.
+    """
     global _last_pull
+    if not _git_enabled():
+        return "（已保存到本地 vault；未启用独立 Git 同步）"
+    relative_paths: list[str] = []
+    for changed_path in changed_paths:
+        try:
+            relative_paths.append(
+                changed_path.resolve(strict=False).relative_to(VAULT).as_posix()
+            )
+        except ValueError:
+            return "（已保存到本地 vault；拒绝同步 vault 外路径）"
+    if not relative_paths:
+        return "（已保存到本地 vault；没有可同步路径）"
+
     with _git_lock:
         try:
-            pull = _run_git("pull", "--rebase")
-            if pull.returncode != 0:
-                _run_git("rebase", "--abort")
-
-            _run_git("add", "-A")
+            staged = _run_git("add", "--", *relative_paths)
+            if staged.returncode != 0:
+                return f"（已保存到本地 vault；暂存失败：{staged.stderr.strip()[:200]}）"
             if _run_git("diff", "--cached", "--quiet").returncode == 0:
                 return "（无变更需要同步）"
 
             commit = _run_git("commit", "-m", message)
             if commit.returncode != 0:
                 return f"（本地 commit 失败：{commit.stderr.strip()[:200]}）"
+
+            pull = _run_git("pull", "--rebase")
+            if pull.returncode != 0:
+                _run_git("rebase", "--abort")
+                return "（已本地保存并 commit，拉取/rebase 失败；请检查远端、冲突或无关工作区改动）"
 
             push = _run_git("push")
             _last_pull = time.time()
@@ -231,6 +297,55 @@ def _safe_md(path: str) -> Path | None:
     except ValueError:
         return None
     return filepath
+
+
+SLUG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,80}$")
+MD_FILENAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,100}\.md$")
+
+
+def _safe_generated_md(directory: str, slug: str, prefix: str = "") -> Path | None:
+    """Build a contained Markdown path from a validated external slug."""
+    if not isinstance(slug, str) or not SLUG_RE.fullmatch(slug):
+        return None
+    return _safe_child_md(directory, f"{prefix}{slug}.md")
+
+
+def _safe_child_md(directory: str, filename: str) -> Path | None:
+    """Resolve a direct child and prove it remains inside both directory and vault."""
+    if not isinstance(filename, str) or not MD_FILENAME_RE.fullmatch(filename):
+        return None
+    if Path(filename).name != filename:
+        return None
+    vault_root = VAULT.resolve()
+    parent = (VAULT / directory).resolve()
+    candidate = (parent / filename).resolve()
+    try:
+        parent.relative_to(vault_root)
+        candidate.relative_to(vault_root)
+        candidate.relative_to(parent)
+    except ValueError:
+        return None
+    if candidate.suffix != ".md":
+        return None
+    return candidate
+
+
+def _invalid_slug() -> str:
+    return "slug 不合法：仅允许字母、数字、下划线和短横线，必须以字母或数字开头，最长 81 个字符。"
+
+
+def _read_core_context(max_chars_per_file: int | None = None) -> str:
+    """Read configured core files safely; vault_config.yaml is the authority."""
+    chunks = []
+    for rel in CORE_FILES:
+        filepath = _safe_md(str(rel))
+        if filepath is None or not filepath.exists():
+            continue
+        text = filepath.read_text(encoding="utf-8", errors="replace").strip()
+        if max_chars_per_file is not None:
+            text = text[:max_chars_per_file]
+        chunks.append(text)
+    return "\n\n---\n\n".join(chunk for chunk in chunks if chunk)
 
 
 def _is_core(path: str) -> bool:
@@ -323,32 +438,39 @@ def _recent_diary_lines(days: int = 3, max_lines: int = 30) -> list[str]:
 
 
 @mcp.tool()
+def get_core_context(max_chars_per_file: int = 1800) -> str:
+    """按 vault_config.yaml 的 core_files 返回核心记忆，不包含任务、日常或记忆清单。
+
+    Args:
+        max_chars_per_file: 每个核心文件最多返回的字符数，默认 1800，范围 200-10000。
+    """
+    _pull_if_stale()
+    limit = max(200, min(int(max_chars_per_file), 10_000))
+    context = _read_core_context(limit)
+    if not context:
+        raise RuntimeError("vault_config.yaml 配置的核心记忆文件不存在或为空。")
+    return context
+
+
+@mcp.tool()
 def get_context() -> str:
     """获取主人的核心记忆上下文。每次新会话第一轮回复前先调用这个工具，
-    返回：核心记忆全文 + 时间敏感事项（过期/到期任务，主动跟进）+ 最近日常 + 其余记忆清单。
-    之后可以按需用 search_vault / read_file / get_related 深挖。"""
+    返回稳定内容：核心记忆全文 + 其余长期记忆清单。不包含时间、任务或最近日常，
+    避免长会话保留过期快照。同时调用 get_turn_time 和 get_task_context；之后按需用
+    search_vault / read_file / get_related 深挖。"""
     _pull_if_stale()
 
     parts = [
         f"# {OWNER} 核心记忆上下文",
         "",
-        _now_line(),
-        "",
         "⚠ source 只是记忆的写入来源，不是当前 AI 的身份。你的身份由你自己的指令和身份配置决定。",
         "",
     ]
 
-    core_set = set(CORE_FILES)
-    for rel in CORE_FILES:
-        fp = VAULT / rel
-        if fp.exists():
-            parts.append(fp.read_text(encoding="utf-8", errors="replace").strip())
-            parts.append("")
-            parts.append("---")
-            parts.append("")
-
-    parts.extend(_time_sensitive_lines())
-    parts.extend(_recent_diary_lines())
+    core_set = {Path(str(rel)).as_posix() for rel in CORE_FILES}
+    core_context = _read_core_context()
+    if core_context:
+        parts.extend([core_context, "", "---", ""])
 
     others = [f for f in _scan_files(["memories"]) if f["path"] not in core_set]
     if others:
@@ -360,6 +482,30 @@ def get_context() -> str:
             parts.append(f"- **{f['title']}** (`{f['path']}`){tag_part}")
 
     return "\n".join(parts)
+
+
+@mcp.tool()
+def get_turn_time() -> str:
+    """获取本轮对话的当前时间。每轮回复前调用，只返回一行短时间戳，
+    用于避免长任务仍使用首轮的旧时间。不返回任务列表，防止每轮重复累积。"""
+    return _now_line()
+
+
+@mcp.tool()
+def get_task_context() -> str:
+    """获取按当前日期计算的未完成任务快照：已过期、今天到期、未来 7 天与无期限任务。
+    新会话首轮调用；之后仅在跨日、会话恢复、任务相关话题或 add_task/update_task 后刷新，
+    不要每轮调用，以免重复快照污染上下文。"""
+    _pull_if_stale()
+    snapshot_date = _today().isoformat()
+    lines = _time_sensitive_lines()
+    if not lines:
+        return f"任务快照日期：{snapshot_date}\n当前没有未完成任务。"
+    return "\n".join([
+        f"任务快照日期：{snapshot_date}",
+        "",
+        *lines,
+    ])
 
 
 @mcp.tool()
@@ -469,28 +615,22 @@ def write_inbox(slug: str, title: str, content: str, tags: list[str], source: st
     """
     today = _today().isoformat()
     filename = f"{today}_{slug}.md"
-    filepath = VAULT / "inbox" / filename
+    filepath = _safe_generated_md("inbox", slug, f"{today}_")
+    if filepath is None:
+        return _invalid_slug()
     filepath.parent.mkdir(exist_ok=True)  # 空目录不进 git，克隆/reset 后可能消失
 
     if filepath.exists():
         return f"文件已存在：inbox/{filename}，请换一个 slug。"
 
-    tag_str = "\n".join(f"  - {t}" for t in tags) if tags else "  - untagged"
-
-    md_content = f"""---
-type: inbox
-created: {today}
-source: {source}
-tags:
-{tag_str}
----
-
-# {title}
-
-{content}
-"""
-    filepath.write_text(md_content.strip() + "\n", encoding="utf-8")
-    sync_status = _git_sync(f"auto: 写入记忆 {slug} (source: {source})")
+    meta = {
+        "type": "inbox",
+        "created": today,
+        "source": source,
+        "tags": tags or ["untagged"],
+    }
+    filepath.write_text(_rebuild_file(meta, f"# {title}\n\n{content}"), encoding="utf-8")
+    sync_status = _git_sync(f"auto: 写入记忆 {slug} (source: {source})", filepath)
     return f"已写入：inbox/{filename} {sync_status}"
 
 
@@ -519,11 +659,13 @@ def promote_to_memory(filename: str) -> str:
     Args:
         filename: inbox/ 中的文件名，例如 "2026-06-24_likes-spicy-food.md"
     """
-    src = VAULT / "inbox" / filename
+    src = _safe_child_md("inbox", filename)
+    dst = _safe_child_md("memories", filename)
+    if src is None or dst is None:
+        return "文件名不合法：只能使用 inbox 中由记忆工具生成的 .md 文件名。"
     if not src.exists():
         return f"文件不存在：inbox/{filename}"
 
-    dst = VAULT / "memories" / filename
     dst.parent.mkdir(exist_ok=True)
     if dst.exists():
         return f"memories/ 中已有同名文件：{filename}"
@@ -540,7 +682,7 @@ def promote_to_memory(filename: str) -> str:
     except Exception as e:
         rebuild_note = f"（context_prompt.md 重建失败：{e}）"
 
-    sync_status = _git_sync(f"auto: 升级记忆 {filename}")
+    sync_status = _git_sync(f"auto: 升级记忆 {filename}", src, dst)
     return f"已升级：inbox/{filename} → memories/{filename} {sync_status}{rebuild_note}"
 
 
@@ -557,7 +699,9 @@ def write_memory(slug: str, title: str, content: str, tags: list[str], source: s
         tags: 标签列表
         source: 写入来源（AI 名/渠道名），例如 "claude" / "gpt"
     """
-    filepath = VAULT / "memories" / f"{slug}.md"
+    filepath = _safe_generated_md("memories", slug)
+    if filepath is None:
+        return _invalid_slug()
     filepath.parent.mkdir(exist_ok=True)
     if filepath.exists():
         return f"memories/{slug}.md 已存在。补充内容请用 update_memory，换主题请换 slug。"
@@ -574,7 +718,7 @@ def write_memory(slug: str, title: str, content: str, tags: list[str], source: s
         _rebuild_context_prompt()
     except Exception:
         pass
-    sync_status = _git_sync(f"auto: 新记忆 {slug} (source: {source})")
+    sync_status = _git_sync(f"auto: 新记忆 {slug} (source: {source})", filepath)
     return f"已写入：memories/{slug}.md {sync_status}"
 
 
@@ -616,7 +760,7 @@ def update_memory(path: str, content: str, mode: str = "append", source: str = "
             _rebuild_context_prompt()
         except Exception:
             pass
-    sync_status = _git_sync(f"auto: 修改记忆 {rel} [{mode}] (source: {source})")
+    sync_status = _git_sync(f"auto: 修改记忆 {rel} [{mode}] (source: {source})", filepath)
     return f"已{'追加' if mode == 'append' else '重写'}：{rel} {sync_status}"
 
 
@@ -656,7 +800,7 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
             _rebuild_context_prompt()
         except Exception:
             pass
-    sync_status = _git_sync(f"auto: 归档 {rel}（{reason[:50]}）")
+    sync_status = _git_sync(f"auto: 归档 {rel}（{reason[:50]}）", filepath, dest)
     return f"已归档：{rel} → _archive/retired/{dest.name} {sync_status}"
 
 
@@ -687,7 +831,7 @@ def log_daily(content: str, source: str = "unknown") -> str:
     with filepath.open("a", encoding="utf-8") as f:
         f.write(f"\n- **{now.strftime('%H:%M')}** [{source}] {content.strip()}")
 
-    sync_status = _git_sync(f"auto: 日常 {now.date().isoformat()} (source: {source})")
+    sync_status = _git_sync(f"auto: 日常 {now.date().isoformat()} (source: {source})", filepath)
     return f"已记录到 diary/{filepath.name} {sync_status}"
 
 
@@ -705,7 +849,9 @@ def write_diary(slug: str, title: str, content: str, source: str = "unknown", ta
         tags: 标签（可选，默认 ["日记"]）
     """
     today = _today().isoformat()
-    filepath = VAULT / "diary" / f"{today}_{slug}.md"
+    filepath = _safe_generated_md("diary", slug, f"{today}_")
+    if filepath is None:
+        return _invalid_slug()
     filepath.parent.mkdir(exist_ok=True)
     if filepath.exists():
         return f"diary/{filepath.name} 已存在，换个 slug 或用 update_memory 追加。"
@@ -718,7 +864,7 @@ def write_diary(slug: str, title: str, content: str, source: str = "unknown", ta
     }
     filepath.write_text(_rebuild_file(meta, f"# {title}\n\n{content}"), encoding="utf-8")
 
-    sync_status = _git_sync(f"auto: 日记 {slug} (source: {source})")
+    sync_status = _git_sync(f"auto: 日记 {slug} (source: {source})", filepath)
     return f"已写入：diary/{filepath.name} {sync_status}"
 
 
@@ -740,9 +886,11 @@ def add_task(slug: str, title: str, due: str, content: str = "", tags: list[str]
         except ValueError:
             return f"due 日期格式不对：{due}，需要 YYYY-MM-DD。"
 
-    dirpath = VAULT / "tasks"
+    filepath = _safe_generated_md("tasks", slug)
+    if filepath is None:
+        return _invalid_slug()
+    dirpath = filepath.parent
     dirpath.mkdir(exist_ok=True)
-    filepath = dirpath / f"{slug}.md"
     if filepath.exists():
         return f"tasks/{slug}.md 已存在，换个 slug 或用 update_task 更新它。"
 
@@ -759,7 +907,7 @@ def add_task(slug: str, title: str, due: str, content: str = "", tags: list[str]
         body += f"\n\n{content.strip()}"
     filepath.write_text(_rebuild_file(meta, body), encoding="utf-8")
 
-    sync_status = _git_sync(f"auto: 新任务 {slug} due:{due or 'none'}")
+    sync_status = _git_sync(f"auto: 新任务 {slug} due:{due or 'none'}", filepath)
     return f"已创建：tasks/{slug}.md（due: {due or '无期限'}） {sync_status}"
 
 
@@ -795,7 +943,7 @@ def update_task(path: str, status: str, note: str = "", source: str = "unknown")
         line += f"\n\n{note.strip()}"
     filepath.write_text(_rebuild_file(meta, f"{body}\n\n{line}"), encoding="utf-8")
 
-    sync_status = _git_sync(f"auto: 任务 {rel} → {status}")
+    sync_status = _git_sync(f"auto: 任务 {rel} → {status}", filepath)
     return f"已更新：{rel} → {status} {sync_status}"
 
 
@@ -913,9 +1061,14 @@ def _run_http(host: str | None, port: int, path: str = "/mcp") -> None:
             enable_dns_rebinding_protection=False,
         )
     else:
+        extra_hosts = [
+            item.strip()
+            for item in os.environ.get("VAULT_ALLOWED_HOSTS", "").split(",")
+            if item.strip()
+        ]
         mcp.settings.transport_security = TransportSecuritySettings(
             enable_dns_rebinding_protection=True,
-            allowed_hosts=[f"{host}:*", "localhost:*", "127.0.0.1:*"],
+            allowed_hosts=[f"{host}:*", "localhost:*", "127.0.0.1:*", *extra_hosts],
             allowed_origins=[f"http://{host}:*", "http://localhost:*", "http://127.0.0.1:*"],
         )
 
@@ -945,17 +1098,22 @@ def _run_http(host: str | None, port: int, path: str = "/mcp") -> None:
         mcp.run(transport="streamable-http")
 
 
-if __name__ == "__main__":
+def main(argv: list[str] | None = None) -> None:
+    """Run the MCP server while keeping the historical script entrypoint."""
     import argparse
 
     parser = argparse.ArgumentParser(description="Memory Vault MCP Server")
-    parser.add_argument("--http", action="store_true", help="以 streamable-http 模式启动（默认 stdio）")
-    parser.add_argument("--host", default=None, help="HTTP 绑定地址（默认自动探测 Tailscale IP）")
-    parser.add_argument("--port", type=int, default=8900, help="HTTP 端口（默认 8900；别用 8769-8868，Windows 保留段）")
-    parser.add_argument("--path", default="/mcp", help="MCP 端点路径（默认 /mcp；公网 funnel 部署时用带随机串的秘密路径）")
-    args = parser.parse_args()
+    parser.add_argument("--http", action="store_true", help="use streamable HTTP instead of stdio")
+    parser.add_argument("--host", default=None, help="HTTP bind address (default: detected Tailscale IP)")
+    parser.add_argument("--port", type=int, default=8900, help="HTTP port (default: 8900)")
+    parser.add_argument("--path", default="/mcp", help="MCP endpoint path (default: /mcp)")
+    args = parser.parse_args(argv)
 
     if args.http:
         _run_http(args.host, args.port, args.path)
     else:
         mcp.run()
+
+
+if __name__ == "__main__":
+    main()

@@ -10,7 +10,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/memory-vault
-ExecStart=/opt/memory-vault-env/bin/python /opt/memory-vault/_meta/mcp_server.py --http --port 8900
+ExecStart=/opt/memory-vault-env/bin/memory-vault-mcp --vault /opt/memory-vault --http --port 8900
 # EnvironmentFile=-/opt/memory-vault/.env
 Restart=always
 RestartSec=5

@@ -1,0 +1,14 @@
+# 记忆库个性化配置 —— 改这一个文件就完成定制
+# 改完重启 MCP 服务生效
+
+# 主人的名字（AI 会用这个名字称呼记忆的主人）
+owner: 主人
+
+# 主人所在时区（任务到期判断、日常时间戳都按这个算，别用服务器时区）
+timezone: Asia/Shanghai
+
+# 核心身份文件：每次新会话自动全文注入，且只允许追加、不允许重写/归档
+# 建议保持两个：一个"我是谁"，一个"AI 该怎么跟我相处"
+core_files:
+  - memories/owner-core.md
+  - memories/owner-ai-interaction-styles.md

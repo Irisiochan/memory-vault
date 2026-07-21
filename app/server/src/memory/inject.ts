@@ -22,7 +22,7 @@ const STOPWORDS = new Set([
 ]);
 
 // 无分词器的穷人版切词：先按常见虚词把中文切成短语，再提取词元。
-// "周六要去看田一名的演唱会" → 周六 / 田一名 / 演唱会
+// "周六要去看示例歌手的演唱会" → 周六 / 示例歌手 / 演唱会
 const CJK_PARTICLES =
   /[的了是在有要去看和跟把给对就都也很会能别不得着过吗呢吧啊呀哦嘛啦么这那哪你我他她它们]/g;
 
@@ -36,8 +36,8 @@ export function extractKeywords(text: string, max = 4): string[] {
     ...(cleaned.match(CJK_RUN) ?? []),
   ].map((w) => w.trim());
 
-  // 长中文词元大概率是没切开的复合词（"田一名演唱会"），补前 3 / 后 3 字候选，
-  // 提高命中"田一名上海演唱会"这类变体的概率
+  // 长中文词元大概率是没切开的复合词（"示例歌手演唱会"），补前 3 / 后 3 字候选，
+  // 提高命中"示例歌手上海演唱会"这类变体的概率
   const candidates: string[] = [];
   for (const r of runs) {
     candidates.push(r);

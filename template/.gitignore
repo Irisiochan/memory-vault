@@ -1,20 +1,6 @@
 __pycache__/
 *.py[cod]
-.venv/
-build/
-dist/
-*.egg-info/
 .env
-vault-data/
-app/**/node_modules/
-app/**/dist/
-app/server/data/
-app/server/config.json
-app/server/agents/
-app/*.log
-app/worker/config.json
-app/worker/worker-state.json
-app/worker/worker-state.json.tmp
 
 # 大文件/媒体不进 git（放库外或本地）
 *.mp4

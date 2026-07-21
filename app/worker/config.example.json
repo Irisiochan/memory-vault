@@ -1,5 +1,5 @@
 {
-  "serverUrl": "http://100.71.110.34:3900",
+  "serverUrl": "https://hub.example.com",
   "token": "pc-iris.PASTE_PAIRING_TOKEN_HERE",
   "name": "Iris-PC",
   "workspaces": [

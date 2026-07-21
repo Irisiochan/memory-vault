@@ -13,7 +13,9 @@ import sys
 import yaml
 from pathlib import Path
 
-VAULT = Path(__file__).parent.parent
+CODE_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_VAULT = CODE_ROOT
+VAULT = Path(os.environ.get("MEMORY_VAULT_PATH", DEFAULT_VAULT)).expanduser().resolve()
 
 def _owner() -> str:
     cfg_path = VAULT / "_meta" / "vault_config.yaml"

@@ -19,7 +19,6 @@ ChatGPT ──HTTPS(funnel)──┘      │ git push/pull
 # 1. 依赖
 apt-get update && apt-get install -y python3-venv git
 python3 -m venv /opt/memory-vault-env
-/opt/memory-vault-env/bin/pip install "mcp[cli]" pyyaml
 
 # 2. 部署密钥（公钥加到 GitHub 仓库 → Settings → Deploy keys，勾 Allow write access）
 ssh-keygen -t ed25519 -N "" -f /root/.ssh/vault_deploy -C "vps-vault"
@@ -29,6 +28,7 @@ printf 'Host github.com\n  IdentityFile /root/.ssh/vault_deploy\n' >> /root/.ssh
 # 3. 克隆（换成你的仓库）
 git clone git@github.com:<你的用户名>/<你的仓库>.git /opt/memory-vault
 cd /opt/memory-vault
+/opt/memory-vault-env/bin/pip install -e .
 git config user.name "vps"
 git config user.email "<你的邮箱>"
 
@@ -47,10 +47,14 @@ systemctl status memory-vault-mcp
 
 手机 App：添加 MCP，类型 streamable-http，URL `http://<VPS的Tailscale-IP>:8900/mcp`。
 
-## 公网入口（ChatGPT 连接器专用，可选）
+## 公网入口（ChatGPT 自定义 App，可选）
 
-ChatGPT 的 MCP 连接器从 OpenAI 服务器发起连接，进不了 tailnet，且强制 HTTPS——
-为它单独跑一个绑 127.0.0.1 的实例，秘密路径当密码，tailscale funnel 出公网：
+ChatGPT 不会直接启动本机 stdio MCP，需要一个可达的远程服务。优先考虑
+OpenAI 官方 Secure MCP Tunnel 或带认证的 HTTPS 入口。下面的 Tailscale Funnel +
+秘密路径是自托管备选：为它单独跑一个绑 127.0.0.1 的实例，再由 Funnel 暴露 HTTPS。
+
+ChatGPT 的完整 MCP/写入能力仍可能受套餐、workspace 管理员、角色和 web 端 beta
+范围限制；配置前先看 README 链接的 OpenAI 当前说明。
 
 ```bash
 # 1. 生成秘密路径（不要提交进 git！只存在 systemd unit 里）
