@@ -6,7 +6,12 @@ Markdown 存储、Obsidian 可读、MCP 读写、可选 Git 多设备同步。
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
-## v0.4 有什么新东西
+## v0.4.1 有什么新东西
+
+- **Hub 远程访问默认安全**：非回环地址启动时强制要求 `HUB_ADMIN_TOKEN`；
+  管理 API、Worker 配对、任务和 SSE 都需要认证，浏览器使用 HttpOnly 会话 Cookie。
+- **发布链路补齐**：main/PR 自动执行 MCP、Hub、Web、Worker 和打包检查，Python
+  依赖均有版本范围。
 
 - **真正分离的上下文**：稳定身份用 `get_context`，每轮时间用
   `get_turn_time`，任务快照用 `get_task_context`；长会话不再抱着旧日期和旧待办。
@@ -157,7 +162,7 @@ _archive/retired/    软删除区
 _meta/               配置、规则、MCP 服务与部署辅助
 template/            MCP 初始化新数据目录时使用的空白模板
 memory_vault_mcp/    可安装命令的 Python 包装
-app/                 可选的自托管多 AI 聊天前端
+app/                 兼容保留的自托管聊天前端（新产品功能归 AI Hub）
 ```
 
 ## 隐私边界
@@ -179,8 +184,9 @@ python _meta/build_context.py
 
 ## 可选聊天前端
 
-[`app/`](app/README.md) 是随仓库提供的开发者预览：多 AI 联系人、群聊、流式回复、
-消息管理、记忆注入和 PC Worker。只想要记忆库时完全不需要运行它。
+[`app/`](app/README.md) 是兼容保留的开发者预览：多 AI 联系人、群聊、流式回复、
+消息管理、记忆注入和 PC Worker。Memory Vault 后续聚焦记忆系统、MCP 和安全同步；
+新的前端/Hub 产品能力归独立 AI Hub 仓库。只想要记忆库时完全不需要运行它。
 
 ## 开发与验证
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.1 - 2026-07-21
+
+- Protect Hub contacts, messages, jobs, Worker pairing, and SSE with a Hub admin
+  token while retaining per-device Worker bearer tokens.
+- Refuse non-loopback Hub binds unless `HUB_ADMIN_TOKEN` is configured; provide
+  an HttpOnly, SameSite=Strict browser session and direct bearer authentication.
+- Add Hub authentication regression tests and run MCP, Hub, Web, Worker, audit,
+  and packaging checks on main pushes and pull requests.
+- Bound Python dependencies, switch package metadata to SPDX `MIT`, and replace
+  personalized Worker examples with neutral placeholders.
+- Clarify the repository boundary: Memory Vault focuses on the memory system;
+  new UI and Hub product work belongs in the separate AI Hub repository.
+
 ## 0.4.0 - 2026-07-21
 
 - Split stable identity context from per-turn time and task snapshots with

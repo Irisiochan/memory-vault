@@ -21,7 +21,7 @@ export default function WorkerPanel({ onClose }: Props) {
   const [messages, setMessages] = useState<JobMessage[]>([]);
   const [error, setError] = useState('');
   const [pairToken, setPairToken] = useState('');
-  const [pairName, setPairName] = useState('Iris-PC');
+  const [pairName, setPairName] = useState('My-PC');
   const [form, setForm] = useState({ runner: 'codex' as 'codex' | 'claude', workspace: '', prompt: '', workerId: '', write: false, shell: false, ssh: false });
 
   const refresh = async () => {

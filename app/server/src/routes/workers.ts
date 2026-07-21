@@ -157,7 +157,7 @@ export function workersRouter(db: Db, sse: SseHub): Router {
          VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', ?), ?, ?)`
       ).run(
         id,
-        typeof req.body?.requestedBy === 'string' ? req.body.requestedBy : 'iris',
+        typeof req.body?.requestedBy === 'string' ? req.body.requestedBy : 'owner',
         typeof req.body?.workerId === 'string' && req.body.workerId ? req.body.workerId : null,
         runner,
         workspace,
@@ -171,7 +171,7 @@ export function workersRouter(db: Db, sse: SseHub): Router {
       if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'duplicate idempotency key' });
       throw e;
     }
-    addMessage(id, 'iris', 'prompt', prompt, { runner, workspace, permissions });
+    addMessage(id, 'owner', 'prompt', prompt, { runner, workspace, permissions });
     emitJob(id);
     const job = db.prepare('SELECT * FROM jobs WHERE id = ?').get(id) as JobRow;
     res.status(201).json(publicJob(job));
@@ -191,7 +191,7 @@ export function workersRouter(db: Db, sse: SseHub): Router {
     db.prepare(
       `UPDATE jobs SET status = ?, lease_until = NULL, error = NULL, updated_at = datetime('now') WHERE id = ?`
     ).run(next, job.id);
-    addMessage(job.id, 'iris', 'state', `${action}: ${job.status} → ${next}`);
+    addMessage(job.id, 'owner', 'state', `${action}: ${job.status} → ${next}`);
     emitJob(job.id);
     res.json({ ok: true, status: next });
   });

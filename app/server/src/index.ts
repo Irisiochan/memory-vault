@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { AgentManager } from './agents/manager.js';
+import { createHubAuth, isWorkerDeviceRoute } from './auth.js';
 import { loadConfig } from './config.js';
 import { openDb } from './db.js';
 import { VaultClient } from './memory/vaultClient.js';
@@ -30,10 +31,18 @@ const manager = new AgentManager({ db, sse, config, vault });
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
+const hubAuth = createHubAuth(config.host);
 
 app.get('/api/health', (_req, res) => {
-  const count = db.prepare('SELECT COUNT(*) AS c FROM messages').get() as { c: number };
-  res.json({ status: 'ok', messageCount: count.c });
+  res.json({ status: 'ok' });
+});
+
+app.use('/api/auth', hubAuth.router);
+app.use('/api', (req, res, next) => {
+  // Worker execution endpoints already require a per-device bearer token.
+  // Pairing, job creation, history, contacts and SSE stay behind Hub admin auth.
+  if (isWorkerDeviceRoute(req.path)) return next();
+  return hubAuth.requireAdmin(req, res, next);
 });
 
 app.get('/api/events', (req, res) => {
@@ -67,6 +76,7 @@ const server = app.listen(config.port, config.host, () => {
   console.log(`  http://${config.host}:${config.port}`);
   console.log(`  db: ${config.dbPath}`);
   console.log(`  web: ${fs.existsSync(config.webDist) ? config.webDist : '(dev — run vite separately)'}`);
+  console.log(`  auth: ${hubAuth.required ? 'HUB_ADMIN_TOKEN required' : 'localhost-only, no token configured'}`);
   console.log('');
 });
 

@@ -26,14 +26,24 @@ export interface Message {
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     ...init,
   });
   if (!res.ok) {
+    if (res.status === 401 && !url.startsWith('/api/auth/')) {
+      window.dispatchEvent(new Event('hub-auth-required'));
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error ?? `${res.status} ${res.statusText}`);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+export interface AuthStatus {
+  required: boolean;
+  authenticated: boolean;
 }
 
 export interface UserProfile {
@@ -132,6 +142,13 @@ export interface JobMessage {
 }
 
 export const api = {
+  authStatus: () => req<AuthStatus>('/api/auth/status'),
+
+  login: (token: string) =>
+    req<void>('/api/auth/session', { method: 'POST', body: JSON.stringify({ token }) }),
+
+  logout: () => req<void>('/api/auth/session', { method: 'DELETE' }),
+
   contacts: () => req<{ contacts: Contact[] }>('/api/contacts'),
 
   createContact: (data: ContactPayload) =>

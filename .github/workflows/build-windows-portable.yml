@@ -1,16 +1,64 @@
-name: Build Windows portable
+name: Test and build Windows portable
 
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ['v*']
+  pull_request:
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            app/server/package-lock.json
+            app/web/package-lock.json
+
+      - name: Test and package MCP
+        run: |
+          python -m pip install --upgrade pip build
+          python -m pip install -e .
+          python tests/template_sync.py
+          python tests/smoke.py
+          python tests/protocol_smoke.py
+          python tests/http_smoke.py
+          python -m build
+
+      - name: Test Hub server
+        run: |
+          npm ci --prefix app/server
+          npm test --prefix app/server
+          npm audit --prefix app/server --audit-level=high
+
+      - name: Build Hub web and check Worker
+        run: |
+          npm ci --prefix app/web
+          npm run build --prefix app/web
+          npm audit --prefix app/web --audit-level=high
+          node --check app/worker/worker.mjs
+
   windows-portable:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: quality
     runs-on: windows-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -28,7 +76,7 @@ jobs:
           npm ci --prefix app/web
           npm run build --prefix app/web
           npm ci --prefix app/server
-          npm run build --prefix app/server
+          npm test --prefix app/server
           npm prune --omit=dev --prefix app/server
 
       - name: Assemble portable folder
@@ -36,7 +84,7 @@ jobs:
         run: |
           $bundle = Join-Path $PWD 'bundle\Memory-Vault'
           New-Item -ItemType Directory -Path $bundle -Force | Out-Null
-          Copy-Item README.md, LICENSE, CLAUDE.md -Destination $bundle
+          Copy-Item README.md, LICENSE, AGENTS.md, CLAUDE.md -Destination $bundle
           Copy-Item memories, _meta, easy -Destination $bundle -Recurse
           New-Item -ItemType Directory -Path "$bundle\tasks","$bundle\inbox","$bundle\projects","$bundle\diary","$bundle\_archive" -Force | Out-Null
           New-Item -ItemType Directory -Path "$bundle\app\server","$bundle\app\web" -Force | Out-Null
@@ -65,7 +113,7 @@ jobs:
           (Get-Content "$py\python312._pth") -replace '#import site','import site' | Set-Content "$py\python312._pth" -Encoding ascii
           Invoke-WebRequest 'https://bootstrap.pypa.io/get-pip.py' -OutFile "$py\get-pip.py"
           & "$py\python.exe" "$py\get-pip.py" --no-warn-script-location
-          & "$py\python.exe" -m pip install --no-warn-script-location 'mcp[cli]' pyyaml tzdata
+          & "$py\python.exe" -m pip install --no-warn-script-location -r requirements.txt
           Remove-Item "$py\get-pip.py" -Force
 
       - name: Create ZIP

@@ -1,7 +1,7 @@
 {
   "serverUrl": "https://hub.example.com",
-  "token": "pc-iris.PASTE_PAIRING_TOKEN_HERE",
-  "name": "Iris-PC",
+  "token": "my-pc.PASTE_PAIRING_TOKEN_HERE",
+  "name": "My-PC",
   "workspaces": [
     "E:\\memory",
     "E:\\xiangmu"

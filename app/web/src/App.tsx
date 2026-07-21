@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, connectEvents, type Contact, type ContactStatus, type Message, type UserProfile } from './api';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { api, connectEvents, type AuthStatus, type Contact, type ContactStatus, type Message, type UserProfile } from './api';
 import ChatPane from './components/ChatPane';
 import ContactConfig from './components/ContactConfig';
 import ContactList from './components/ContactList';
 import UserConfig from './components/UserConfig';
 import WorkerPanel from './components/WorkerPanel';
 
-export default function App() {
+function HubApp() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
@@ -175,4 +175,71 @@ export default function App() {
       {workerPanelOpen && <WorkerPanel onClose={() => setWorkerPanelOpen(false)} />}
     </div>
   );
+}
+
+export default function App() {
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
+  const [token, setToken] = useState('');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const check = useCallback(async () => {
+    try {
+      const status = await api.authStatus();
+      setAuth(status);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    void check();
+    const expired = () => setAuth({ required: true, authenticated: false });
+    window.addEventListener('hub-auth-required', expired);
+    return () => window.removeEventListener('hub-auth-required', expired);
+  }, [check]);
+
+  const login = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.login(token);
+      setToken('');
+      await check();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!auth) {
+    return <div className="auth-gate"><div className="auth-card">{error || '正在连接 Hub…'}</div></div>;
+  }
+  if (auth.required && !auth.authenticated) {
+    return (
+      <div className="auth-gate">
+        <form className="auth-card" onSubmit={(event) => void login(event)}>
+          <div className="auth-mark">🧠</div>
+          <h1>Memory Vault Hub</h1>
+          <p>请输入服务端配置的 HUB_ADMIN_TOKEN。</p>
+          <input
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            autoComplete="current-password"
+            autoFocus
+            aria-label="Hub 管理令牌"
+          />
+          {error && <div className="auth-error">{error}</div>}
+          <button type="submit" disabled={submitting || !token.trim()}>
+            {submitting ? '验证中…' : '登录'}
+          </button>
+        </form>
+      </div>
+    );
+  }
+  return <HubApp />;
 }

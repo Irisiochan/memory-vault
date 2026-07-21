@@ -1,18 +1,20 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "memory-vault-mcp"
-version = "0.4.0"
+version = "0.4.1"
 description = "A local-first Markdown memory vault exposed through MCP"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Irisiochan" }]
 dependencies = [
   "mcp[cli]>=1.10,<2",
   "PyYAML>=6.0,<7",
+  "tzdata>=2025.2,<2027; platform_system == 'Windows'",
 ]
 
 [project.urls]
@@ -23,6 +25,7 @@ memory-vault-mcp = "memory_vault_mcp.cli:main"
 
 [tool.setuptools]
 packages = ["_meta", "memory_vault_mcp"]
+include-package-data = false
 
 [tool.setuptools.package-data]
 memory_vault_mcp = [

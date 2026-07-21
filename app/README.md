@@ -2,7 +2,9 @@
 
 随 Memory Vault 一起提供的自托管聊天前端。它把多个 AI 联系人、共享记忆和聊天历史放进一个 IM 风格界面。
 
-> 这里是保留 CLI 后端与源码调试能力的开发者版。Windows 用户如果只想下载即用，请到仓库 [Releases](https://github.com/Irisiochan/memory-vault/releases) 获取便携版。
+> 这里是兼容保留的开发者版。Memory Vault 后续聚焦记忆系统、MCP 和安全同步；
+> 新的前端/Hub 产品能力归独立 AI Hub 仓库。Windows 用户如果只想下载即用，请到仓库
+> [Releases](https://github.com/Irisiochan/memory-vault/releases) 获取便携版。
 
 ## 已支持
 
@@ -45,7 +47,18 @@ cd app/web && npm install && npm run build
 cd ../server && npm install && npm run build && npm start
 ```
 
-默认只监听 `127.0.0.1:3900`。需要局域网或 Tailscale 访问时，在 `app/server/config.json` 修改 `host`；不要把未认证的服务直接暴露到公网。
+默认只监听 `127.0.0.1:3900`。需要局域网、Tailscale 或 VPS 访问时，在
+`app/server/config.json` 修改 `host`，并先设置至少 24 字符的 `HUB_ADMIN_TOKEN`；
+否则 Hub 会拒绝启动。
+
+```powershell
+$env:HUB_ADMIN_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+npm start
+```
+
+浏览器首次打开会要求输入令牌。验证成功后只保存 HttpOnly、SameSite=Strict 会话
+Cookie，不把原始令牌写入 localStorage。脚本客户端也可直接发送
+`Authorization: Bearer <HUB_ADMIN_TOKEN>`。
 
 ## 配置
 
@@ -79,9 +92,15 @@ Windows Worker 默认仅对自己的 Codex 子进程覆盖 `windows.sandbox="une
 - API key 和聊天历史保存在本机 `app/server/data/hub.db`，该目录已被 gitignore。
 - `config.json`、agent 工作目录、构建产物均不会进入 git。
 - `worker/config.json` 和本机断线补传状态不会进入 git；VPS 仅保存设备令牌哈希。
-- 默认没有登录层，只适合 localhost、可信局域网或 Tailscale。
+- `/api/health` 只返回存活状态；联系人、消息、任务、Worker 配对和 SSE 全部受 Hub
+  管理认证保护。
+- Worker 执行端点继续使用每台设备独立的 Bearer 令牌；Hub 管理令牌不会下发给 Worker。
+- 仅在回环地址且未配置管理令牌时保留零配置模式。任何非回环绑定都强制要求
+  `HUB_ADMIN_TOKEN`，但公网部署仍应使用 HTTPS、网络访问控制和定期轮换令牌。
 - 开源仓库是模板；真正填入个人记忆后，请使用 private 仓库。
 
 ## 便携版如何构建
 
-`.github/workflows/build-windows-portable.yml` 会在版本标签或手动运行时自动构建 Windows x64 ZIP，内置 Node.js、Python、MCP 依赖和生产版前后端。便携版默认只开放 API 联系人；Claude/Codex CLI 能力仍保留在本开发者版中。
+`.github/workflows/build-windows-portable.yml` 会在 main/PR 上自动执行测试，并在版本标签
+或手动运行时构建 Windows x64 ZIP，内置 Node.js、Python、MCP 依赖和生产版前后端。
+便携版默认只开放 API 联系人；Claude/Codex CLI 能力仍保留在本开发者版中。
