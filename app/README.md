@@ -3,7 +3,8 @@
 随 Memory Vault 一起提供的自托管聊天前端。它把多个 AI 联系人、共享记忆和聊天历史放进一个 IM 风格界面。
 
 > 这里是兼容保留的开发者版。Memory Vault 后续聚焦记忆系统、MCP 和安全同步；
-> 新的前端/Hub 产品能力归独立 AI Hub 仓库。Windows 用户如果只想下载即用，请到仓库
+> 新的前端/Hub 产品能力归独立的
+> [`ai-hub-public`](https://github.com/Irisiochan/ai-hub-public) 仓库。Windows 用户如果只想下载即用，请到仓库
 > [Releases](https://github.com/Irisiochan/memory-vault/releases) 获取便携版。
 
 ## 已支持

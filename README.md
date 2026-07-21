@@ -162,7 +162,7 @@ _archive/retired/    软删除区
 _meta/               配置、规则、MCP 服务与部署辅助
 template/            MCP 初始化新数据目录时使用的空白模板
 memory_vault_mcp/    可安装命令的 Python 包装
-app/                 兼容保留的自托管聊天前端（新产品功能归 AI Hub）
+app/                 兼容保留的自托管聊天前端（新产品功能归 ai-hub-public）
 ```
 
 ## 隐私边界
@@ -186,7 +186,8 @@ python _meta/build_context.py
 
 [`app/`](app/README.md) 是兼容保留的开发者预览：多 AI 联系人、群聊、流式回复、
 消息管理、记忆注入和 PC Worker。Memory Vault 后续聚焦记忆系统、MCP 和安全同步；
-新的前端/Hub 产品能力归独立 AI Hub 仓库。只想要记忆库时完全不需要运行它。
+新的前端/Hub 产品能力归独立的
+[`ai-hub-public`](https://github.com/Irisiochan/ai-hub-public) 仓库。只想要记忆库时完全不需要运行它。
 
 ## 开发与验证
 
