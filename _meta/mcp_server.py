@@ -913,7 +913,7 @@ def add_task(slug: str, title: str, due: str, content: str = "", tags: list[str]
 
 @mcp.tool()
 def update_task(path: str, status: str, note: str = "", source: str = "unknown") -> str:
-    """更新任务状态。主人说做完了 → done；不做了/不需要了 → dropped；改期 → 保持 open 并在 note 里说明（会更新 due 需重建任务）。
+    """更新任务状态。done / dropped 会立即软归档；改期保持 open 并在 note 里说明。
 
     Args:
         path: 相对路径，例如 "tasks/renew-passport.md"
@@ -941,8 +941,35 @@ def update_task(path: str, status: str, note: str = "", source: str = "unknown")
     line = f"## 状态变更 {today} → {status}"
     if note.strip():
         line += f"\n\n{note.strip()}"
-    filepath.write_text(_rebuild_file(meta, f"{body}\n\n{line}"), encoding="utf-8")
 
+    if status in ("done", "dropped"):
+        meta["archived"] = today
+        dest_dir = VAULT / "_archive" / "retired"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / filepath.name
+        if dest.exists():
+            date_suffix = today.replace("-", "")
+            dest = dest_dir / f"{filepath.stem}-{date_suffix}{filepath.suffix}"
+            counter = 2
+            while dest.exists():
+                dest = dest_dir / (
+                    f"{filepath.stem}-{date_suffix}-{counter}{filepath.suffix}"
+                )
+                counter += 1
+
+        updated_content = _rebuild_file(meta, f"{body}\n\n{line}")
+        filepath.write_text(updated_content, encoding="utf-8")
+        shutil.move(str(filepath), str(dest))
+        archived_rel = dest.relative_to(VAULT).as_posix()
+        sync_status = _git_sync(
+            f"auto: 任务 {rel} → {status} 并归档",
+            filepath,
+            dest,
+        )
+        return f"已更新并归档：{rel} → {status}；{archived_rel} {sync_status}"
+
+    updated_content = _rebuild_file(meta, f"{body}\n\n{line}")
+    filepath.write_text(updated_content, encoding="utf-8")
     sync_status = _git_sync(f"auto: 任务 {rel} → {status}", filepath)
     return f"已更新：{rel} → {status} {sync_status}"
 

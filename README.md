@@ -93,7 +93,7 @@ docker compose up -d
 | 长期记忆 | `write_memory` / `update_memory` / `archive_memory` | 写入、修正、软归档 |
 | 低置信度 | `write_inbox` / `list_inbox` / `promote_to_memory` | 暂存推测，验证后升级 |
 | 日常 | `log_daily` / `write_diary` | 生活流水 / 完整日记与阶段总结 |
-| 任务 | `add_task` / `update_task` | 新建、完成或放弃待办 |
+| 任务 | `add_task` / `update_task` | 新建待办；完成或放弃时自动归档 |
 
 推荐调用节奏：
 

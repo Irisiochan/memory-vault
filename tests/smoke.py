@@ -51,6 +51,46 @@ with tempfile.TemporaryDirectory(prefix="memory-vault-smoke-") as temp:
     assert "现在是" in server.get_turn_time()
     assert "任务快照日期" in server.get_task_context()
 
+    server.add_task(
+        slug="archive-on-done",
+        title="Archive on done",
+        due="",
+        content="This task must leave the active task directory.",
+        tags=["smoke"],
+        source="smoke-test",
+    )
+    done_result = server.update_task(
+        "tasks/archive-on-done.md",
+        "done",
+        "Verified automatic task retirement.",
+        "smoke-test",
+    )
+    retired = vault / "_archive" / "retired" / "archive-on-done.md"
+    assert "已更新并归档" in done_result
+    assert retired.exists()
+    assert not (vault / "tasks" / "archive-on-done.md").exists()
+    retired_text = retired.read_text(encoding="utf-8")
+    assert "status: done" in retired_text
+    assert f"archived: '{server._today().isoformat()}'" in retired_text
+    assert "Archive on done" not in server.get_task_context()
+
+    server.add_task(
+        slug="archive-on-done",
+        title="Archive on dropped with collision",
+        due="",
+        source="smoke-test",
+    )
+    dropped_result = server.update_task(
+        "tasks/archive-on-done.md",
+        "dropped",
+        source="smoke-test",
+    )
+    collision_name = f"archive-on-done-{server._today().strftime('%Y%m%d')}.md"
+    collision_retired = vault / "_archive" / "retired" / collision_name
+    assert "已更新并归档" in dropped_result
+    assert collision_retired.exists()
+    assert "status: dropped" in collision_retired.read_text(encoding="utf-8")
+
     outside = vault.parent / "escape-proof.md"
     rejected = [
         server.write_memory("../../escape-proof", "x", "x", []),
@@ -131,6 +171,34 @@ with tempfile.TemporaryDirectory(prefix="memory-vault-smoke-") as temp:
     )
     committed = set(git("show", "--pretty=", "--name-only", "HEAD").stdout.splitlines())
     assert committed == {"memories/git-isolation.md"}, committed
+    assert "unrelated.txt" not in git("ls-files").stdout.splitlines()
+
+    git_server.add_task(
+        slug="git-archive",
+        title="Git archive",
+        due="",
+        source="smoke-test",
+    )
+    git_server.update_task(
+        "tasks/git-archive.md",
+        "done",
+        source="smoke-test",
+    )
+    archive_changes = {
+        tuple(line.split("\t", 1))
+        for line in git(
+            "show",
+            "--pretty=",
+            "--name-status",
+            "--no-renames",
+            "HEAD",
+        ).stdout.splitlines()
+        if line
+    }
+    assert archive_changes == {
+        ("D", "tasks/git-archive.md"),
+        ("A", "_archive/retired/git-archive.md"),
+    }, archive_changes
     assert "unrelated.txt" not in git("ls-files").stdout.splitlines()
 
 print("memory-vault smoke: ok")

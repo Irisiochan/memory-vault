@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 - 2026-07-25
+
+- Make `update_task(..., status="done" | "dropped")` move the task into
+  `_archive/retired/` in the same automatic Git commit.
+- Preserve the original filename; on collision, append `-YYYYMMDD` and then a
+  numeric suffix if needed.
+- Add `archived: YYYY-MM-DD` frontmatter and regression coverage for active
+  task removal, task-context exclusion, collisions, and staged Git paths.
+
 ## 0.5.0 - 2026-07-24
 
 - Remove the legacy `app/` chat frontend, `easy/` Windows launcher, and portable

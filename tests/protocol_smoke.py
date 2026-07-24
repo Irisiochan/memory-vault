@@ -35,6 +35,8 @@ async def run() -> None:
                     "get_task_context",
                     "search_vault",
                     "write_memory",
+                    "add_task",
+                    "update_task",
                 }
                 assert required <= names, required - names
 
@@ -54,6 +56,38 @@ async def run() -> None:
                 )
                 assert not written.isError
                 assert (vault / "memories" / "protocol-smoke.md").exists()
+
+                task = await session.call_tool(
+                    "add_task",
+                    {
+                        "slug": "protocol-archive",
+                        "title": "Protocol archive",
+                        "due": "",
+                        "source": "test",
+                    },
+                )
+                assert not task.isError
+
+                completed = await session.call_tool(
+                    "update_task",
+                    {
+                        "path": "tasks/protocol-archive.md",
+                        "status": "done",
+                        "note": "Completed through a real MCP session.",
+                        "source": "test",
+                    },
+                )
+                assert not completed.isError
+                assert not (vault / "tasks" / "protocol-archive.md").exists()
+                assert (
+                    vault / "_archive" / "retired" / "protocol-archive.md"
+                ).exists()
+
+                tasks = await session.call_tool("get_task_context", {})
+                task_text = "\n".join(
+                    block.text for block in tasks.content if hasattr(block, "text")
+                )
+                assert "Protocol archive" not in task_text
 
 
 if __name__ == "__main__":

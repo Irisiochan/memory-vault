@@ -38,7 +38,7 @@ tool contract remain compatible.
 When testing AI Hub against this release, set:
 
 ```dotenv
-MEMORY_VAULT_VERSION=v0.5.0
+MEMORY_VAULT_VERSION=v0.5.1
 ```
 
 Then rebuild its Compose service and run its Memory Vault contract smoke test.
