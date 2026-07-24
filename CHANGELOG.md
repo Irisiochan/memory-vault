@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 - 2026-07-24
+
+- Remove the legacy `app/` chat frontend, `easy/` Windows launcher, and portable
+  frontend build workflow from the Memory Vault repository.
+- Keep Memory Vault focused on the Markdown vault contract, installable MCP
+  server/CLI, Docker image, templates, synchronization rules, and tests.
+- Point users who need a chat UI, contacts, groups, or PC Workers to the
+  separately versioned
+  [AI Hub](https://github.com/Irisiochan/ai-hub-public) client.
+- Add a repository-boundary regression test and a dedicated Python/Docker
+  quality workflow.
+- Document the breaking upgrade path in
+  [docs/migration-v0.5.md](docs/migration-v0.5.md). The removed frontend remains
+  available in the `v0.4.1` tag and Git history.
+
 ## 0.4.1 - 2026-07-21
 
 - Protect Hub contacts, messages, jobs, Worker pairing, and SSE with a Hub admin

@@ -1,30 +1,22 @@
-# Memory Vault — 多 AI 共享长期记忆
+# Memory Vault — 通用 AI 记忆基础设施
 
-给 Claude、Codex、ChatGPT、自建 Agent 和手机端客户端一套共用记忆：
-Markdown 存储、Obsidian 可读、MCP 读写、可选 Git 多设备同步。
+给 Claude、Codex、ChatGPT 和自建 Agent 一套可替换前端的共享长期记忆：
+Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多设备同步。
 
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
-## v0.4.1 有什么新东西
+## v0.5.0：记忆系统与客户端正式解耦
 
-- **Hub 远程访问默认安全**：非回环地址启动时强制要求 `HUB_ADMIN_TOKEN`；
-  管理 API、Worker 配对、任务和 SSE 都需要认证，浏览器使用 HttpOnly 会话 Cookie。
-- **发布链路补齐**：main/PR 自动执行 MCP、Hub、Web、Worker 和打包检查，Python
-  依赖均有版本范围。
+- 仓库只保留 Markdown 记忆规范、MCP server/CLI、Docker、模板、同步规则与测试。
+- 旧 `app/`、`easy/` 和 Windows 前端便携包已移出；旧实现仍可从
+  [`v0.4.1`](https://github.com/Irisiochan/memory-vault/tree/v0.4.1) 追溯。
+- 聊天 UI、多联系人、群聊和 Worker 由可选客户端
+  [`ai-hub-public`](https://github.com/Irisiochan/ai-hub-public) 提供。
+- CI 只验证 Memory Vault 的 Python 包、MCP 协议、HTTP 传输、仓库边界和 Docker 镜像。
 
-- **真正分离的上下文**：稳定身份用 `get_context`，每轮时间用
-  `get_turn_time`，任务快照用 `get_task_context`；长会话不再抱着旧日期和旧待办。
-- **更省 token**：网关可调用 `get_core_context` 只取核心文件，并限制每个文件长度。
-- **路径与 Git 隔离**：所有生成路径都校验；只有 vault 自己有 `.git` 时才同步，
-  不会误提交到父级源码仓库。
-- **无 Git 也能用**：本地写入永远成立；Git 只是可选同步层。
-- **共享任务账本**：加入 `worker-tail` / `deploy-tail`，让另一台机器或另一个 AI
-  能从真实 Git 状态续接未完成工作。
-- **跨 CLI 规则**：`AGENTS.md` 与 `CLAUDE.md` 共用一份工作流，避免不同客户端各写一套。
-- **MCP 已封装**：提供 `memory-vault-mcp` 命令、Docker/Compose 和冒烟测试。
-
-完整变化见 [CHANGELOG.md](CHANGELOG.md)。
+从旧版升级前请读 [v0.5 迁移说明](docs/migration-v0.5.md)；完整变化见
+[CHANGELOG.md](CHANGELOG.md)。
 
 ## 最短上手：本地 MCP
 
@@ -162,7 +154,6 @@ _archive/retired/    软删除区
 _meta/               配置、规则、MCP 服务与部署辅助
 template/            MCP 初始化新数据目录时使用的空白模板
 memory_vault_mcp/    可安装命令的 Python 包装
-app/                 兼容保留的自托管聊天前端（新产品功能归 ai-hub-public）
 ```
 
 ## 隐私边界
@@ -182,12 +173,12 @@ python _meta/build_context.py
 它会生成 `_meta/context_prompt.md`，可粘贴到支持自定义指令的客户端。
 这种方式只负责注入；写入仍需客户端直接编辑文件或由其他自动化完成。
 
-## 可选聊天前端
+## 可选客户端：AI Hub
 
-[`app/`](app/README.md) 是兼容保留的开发者预览：多 AI 联系人、群聊、流式回复、
-消息管理、记忆注入和 PC Worker。Memory Vault 后续聚焦记忆系统、MCP 和安全同步；
-新的前端/Hub 产品能力归独立的
-[`ai-hub-public`](https://github.com/Irisiochan/ai-hub-public) 仓库。只想要记忆库时完全不需要运行它。
+需要聊天 UI、多联系人、群聊、流式回复或 PC Worker 时，使用独立的
+[`ai-hub-public`](https://github.com/Irisiochan/ai-hub-public)。它通过固定版本的
+Memory Vault Docker/MCP 依赖运行，不复制维护本仓库源码；只想要记忆基础设施时
+完全不需要安装 AI Hub。
 
 ## 开发与验证
 
@@ -195,13 +186,14 @@ python _meta/build_context.py
 python tests/smoke.py
 python tests/protocol_smoke.py
 python tests/http_smoke.py
+python tests/repository_boundary.py
 python -m build
 docker build -t memory-vault-mcp .
 ```
 
 冒烟测试使用临时 vault，覆盖初始化、本地写入、记忆升级、分离上下文、
-旧 vault 兼容、路径穿越防护，以及真实 stdio / streamable-http MCP 握手，
-不会触碰你的真实数据。
+旧 vault 兼容、路径穿越防护、仓库边界，以及真实 stdio / streamable-http
+MCP 握手，不会触碰你的真实数据。
 
 ## License
 
