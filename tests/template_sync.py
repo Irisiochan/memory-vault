@@ -8,6 +8,7 @@ RELATIVE_FILES = [
     Path("_meta/cli/global-agent-workflow.md"),
     Path("_meta/rules.md"),
     Path("_meta/vault_config.yaml"),
+    Path("_meta/schemas/fact.md"),
     Path("memories/owner-core.md"),
     Path("memories/owner-ai-interaction-styles.md"),
 ]

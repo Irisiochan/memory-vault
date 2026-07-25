@@ -87,7 +87,8 @@ docker compose up -d
 | 类别 | 工具 | 用途 |
 |---|---|---|
 | 稳定上下文 | `get_context` | 核心记忆全文 + 其余长期记忆索引 |
-| 紧凑上下文 | `get_core_context` | 限长读取核心文件，适合网关注入 |
+| 核心上下文 | `get_core_context` | narrative 核心文件或 compact 高优先级事实 |
+| 结构化事实 | `write_fact` / `get_facts` | 可追溯写入、版本收敛和筛选读取 |
 | 当前状态 | `get_turn_time` / `get_task_context` | 本轮时间 / 未完成任务快照 |
 | 检索 | `search_vault` / `read_file` / `get_related` | 搜索、精读、沿链接与标签联想 |
 | 长期记忆 | `write_memory` / `update_memory` / `archive_memory` | 写入、修正、软归档 |
@@ -155,6 +156,9 @@ _meta/               配置、规则、MCP 服务与部署辅助
 template/            MCP 初始化新数据目录时使用的空白模板
 memory_vault_mcp/    可安装命令的 Python 包装
 ```
+
+`_meta/mcp_server.py` 只负责工具注册与入口；上下文、事实、检索、写入、任务和传输逻辑
+分别位于 `_meta/vault_*.py`，便于独立测试和演进。
 
 ## 隐私边界
 

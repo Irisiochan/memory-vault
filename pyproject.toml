@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memory-vault-mcp"
-version = "0.5.1"
+version = "0.6.0"
 description = "A local-first Markdown memory vault exposed through MCP"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -32,6 +32,7 @@ memory_vault_mcp = [
   "template/*.md",
   "template/_meta/*.md",
   "template/_meta/*.yaml",
+  "template/_meta/schemas/*.md",
   "template/_meta/cli/*.md",
   "template/memories/*.md",
 ]

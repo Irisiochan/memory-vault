@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0 - 2026-07-25
+
+- Split the MCP implementation into focused runtime, context, fact, search,
+  write, task, and transport modules; keep `mcp_server.py` as a 101-line
+  compatibility entrypoint.
+- Add `write_fact` and `get_facts` with source requirements, idempotent writes,
+  active-version convergence, compact context, and guarded fact-domain files.
+- Preserve AI Hub `hub-auto` inbox provenance when promoting captures or
+  converting them into tasks.
+- Add protocol, HTTP, fact-layer, lifecycle, module-boundary, template-sync,
+  repository-boundary, and wheel packaging coverage.
+
 ## 0.5.1 - 2026-07-25
 
 - Make `update_task(..., status="done" | "dropped")` move the task into

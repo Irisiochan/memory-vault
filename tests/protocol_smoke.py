@@ -33,12 +33,42 @@ async def run() -> None:
                     "get_core_context",
                     "get_turn_time",
                     "get_task_context",
+                    "get_facts",
+                    "write_fact",
                     "search_vault",
                     "write_memory",
                     "add_task",
                     "update_task",
                 }
                 assert required <= names, required - names
+
+                fact = await session.call_tool(
+                    "write_fact",
+                    {
+                        "domain": "preferences",
+                        "key": "protocol-smoke",
+                        "value": "works",
+                        "source_refs": ["tests/protocol_smoke.py"],
+                        "priority": "high",
+                        "source": "test",
+                    },
+                )
+                assert not fact.isError
+                duplicate = await session.call_tool(
+                    "write_fact",
+                    {
+                        "domain": "preferences",
+                        "key": "protocol-smoke",
+                        "value": "works",
+                        "source_refs": ["tests/protocol_smoke.py"],
+                        "priority": "high",
+                        "source": "test",
+                    },
+                )
+                duplicate_text = "\n".join(
+                    block.text for block in duplicate.content if hasattr(block, "text")
+                )
+                assert "无需重复写入" in duplicate_text
 
                 now = await session.call_tool("get_turn_time", {})
                 assert not now.isError
