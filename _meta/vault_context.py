@@ -11,7 +11,10 @@ def get_core_context(
     max_chars_per_file: int | str = 1800,
     source: str = "narrative",
 ) -> str:
-    """读取 narrative 核心文件或 compact 结构化事实。"""
+    """读取 narrative 核心文件或 compact 结构化事实。
+
+    宿主已注入 <VAULT_CORE_PRELOADED> 时不要重复调用本工具。
+    """
     if isinstance(max_chars_per_file, str):
         source = max_chars_per_file
         max_chars_per_file = 1800
@@ -30,7 +33,13 @@ def get_core_context(
 
 
 def get_context() -> str:
-    """获取稳定核心记忆和其余长期记忆索引。"""
+    """获取稳定核心记忆和其余长期记忆索引。
+
+    每个新任务首次处理时先检查宿主预载标记：已有
+    <VAULT_CORE_PRELOADED> 时不要重复调用 get_context 或
+    get_core_context；出现 <VAULT_CORE_PRELOAD_FALLBACK> 或没有 core
+    预载标记时才调用本工具。时间和任务快照按各自的预载状态单独获取。
+    """
     rt.pull_if_stale()
     parts = [
         f"# {rt.OWNER} 核心记忆上下文",
@@ -64,12 +73,21 @@ def get_context() -> str:
 
 
 def get_turn_time() -> str:
-    """返回当前 vault 时区的一行短时间戳。"""
+    """返回当前 vault 时区的一行短时间戳。
+
+    仅当本轮没有 <TURN_TIME_PRELOADED> 时调用；宿主已注入该标记时不要
+    重复调用。
+    """
     return rt.now_line()
 
 
 def get_task_context() -> str:
-    """返回按当前 vault 日期计算的未完成任务快照。"""
+    """返回按当前 vault 日期计算的未完成任务快照。
+
+    每个新任务首次处理时调用一次；<VAULT_CORE_PRELOADED> 不包含任务
+    快照。仅当宿主明确标记任务快照也已预载时不重复调用。之后只在跨日、
+    上下文恢复、任务相关话题或任务变更后刷新。
+    """
     rt.pull_if_stale()
     snapshot_date = rt.today().isoformat()
     lines = vault_tasks.time_sensitive_lines()

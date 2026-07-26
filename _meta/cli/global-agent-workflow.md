@@ -17,9 +17,17 @@ rules. The narrower rule wins when they conflict.
 
 Tool prefixes vary by client; identify tools by their final name.
 
-- At the start of every user turn, call `get_turn_time`.
-- On the first turn of a new task, also call `get_context` and
-  `get_task_context` once.
+- At the start of every user turn, check whether the host injected
+  `<TURN_TIME_PRELOADED>`. Use that value when present; otherwise call
+  `get_turn_time` once.
+- On the first turn of a new task, check the core preload state:
+  - With `<VAULT_CORE_PRELOADED>`, use the injected context and do not call
+    `get_context` or `get_core_context`.
+  - With `<VAULT_CORE_PRELOAD_FALLBACK>`, or with no core preload marker, call
+    `get_context` once.
+- Call `get_task_context` once for every new task because the core preload does
+  not contain the task snapshot. Skip it only when the host explicitly says the
+  task snapshot is already preloaded.
 - Refresh `get_task_context` only after a date change, context recovery, a task
   status change, or when the conversation concerns deadlines or task state.
 - For prior preferences, people, projects, decisions, or recent events, call
@@ -31,7 +39,8 @@ Tool prefixes vary by client; identify tools by their final name.
 ## Memory writes
 
 - Search before writing so an existing note can be updated or linked.
-- Confirmed long-lived fact/preference/relationship change: `write_memory`.
+- Confirmed structured fact/preference/relationship change: `write_fact`.
+- Confirmed memory that needs narrative context: `write_memory`.
 - Uncertain inference: `write_inbox`; promote it only after verification.
 - Daily event: `log_daily`; full diary or milestone: `write_diary`.
 - Dated or explicit to-do: `add_task`; completion/cancellation: `update_task`.

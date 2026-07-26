@@ -4,9 +4,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "_meta" / "mcp_server.py"
+CONTEXT = ROOT / "_meta" / "vault_context.py"
+WORKFLOW = ROOT / "_meta" / "cli" / "global-agent-workflow.md"
 
-tree = ast.parse(SERVER.read_text(encoding="utf-8"))
-assert len(SERVER.read_text(encoding="utf-8").splitlines()) < 300
+server_text = SERVER.read_text(encoding="utf-8")
+context_text = CONTEXT.read_text(encoding="utf-8")
+workflow_text = WORKFLOW.read_text(encoding="utf-8")
+tree = ast.parse(server_text)
+assert len(server_text.splitlines()) < 300
 
 module_names = {
     "vault_runtime",
@@ -37,5 +42,14 @@ required = {
     "search_vault",
 }
 assert required <= registered, required - registered
+
+for marker in (
+    "<VAULT_CORE_PRELOADED>",
+    "<VAULT_CORE_PRELOAD_FALLBACK>",
+    "<TURN_TIME_PRELOADED>",
+):
+    assert marker in server_text, f"MCP instructions missing {marker}"
+    assert marker in context_text, f"context tool docs missing {marker}"
+    assert marker in workflow_text, f"workflow missing {marker}"
 
 print("memory-vault module parity: ok")

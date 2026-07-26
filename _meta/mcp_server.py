@@ -24,9 +24,13 @@ rt.configure()
 mcp = FastMCP(
     "memory-vault",
     instructions=(
-        "你已连接到用户拥有的 Memory Vault。新会话先调用 get_context、"
-        "get_turn_time、get_task_context；后续每轮只调用 get_turn_time，"
-        "任务相关或跨日时再刷新 get_task_context。确认且结构化的事实优先用 "
+        "你已连接到用户拥有的 Memory Vault。每个新任务首次处理时先检查宿主预载标记："
+        "已有 <VAULT_CORE_PRELOADED> 时不要重复调用 get_context 或 get_core_context；"
+        "出现 <VAULT_CORE_PRELOAD_FALLBACK> 或没有 core 预载标记时，调用 get_context。"
+        "每个用户回合已有 <TURN_TIME_PRELOADED> 时不要调用 get_turn_time，否则调用一次。"
+        "每个新任务首次处理时仍调用 get_task_context；<VAULT_CORE_PRELOADED> 不包含任务快照。"
+        "仅在宿主明确标记任务快照也已预载时不重复调用；后续只在跨日、上下文恢复、"
+        "任务相关话题或任务变更后刷新 get_task_context。确认且结构化的事实优先用 "
         "write_fact；叙事记忆用 write_memory；不确定内容用 write_inbox。"
     ),
 )

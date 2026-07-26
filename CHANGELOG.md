@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Make MCP instructions and context-tool descriptions aware of host-injected
+  core and turn-time preload markers, avoiding duplicate context calls.
+- Keep task snapshots independent from core preload state and document the
+  exact cadence in the reusable templates and README.
+
 ## 0.6.0 - 2026-07-25
 
 - Split the MCP implementation into focused runtime, context, fact, search,

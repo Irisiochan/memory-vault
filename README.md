@@ -6,6 +6,16 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
+## 当前 main：识别宿主预载，避免重复上下文
+
+有些客户端会在用户消息前自动注入 Memory Vault 的核心上下文或当前时间。
+MCP instructions、工具说明和跨 CLI 工作流现在会识别
+`<VAULT_CORE_PRELOADED>`、`<VAULT_CORE_PRELOAD_FALLBACK>` 与
+`<TURN_TIME_PRELOADED>`，避免同一轮再次调用上下文或时间工具。
+
+核心预载不包含任务快照；除非宿主明确说明任务快照也已预载，每个新任务仍调用一次
+`get_task_context`。这样既保留截止事项提醒，也不会在长会话里反复堆叠同一份上下文。
+
 ## v0.5.0：记忆系统与客户端正式解耦
 
 - 仓库只保留 Markdown 记忆规范、MCP server/CLI、Docker、模板、同步规则与测试。
@@ -56,8 +66,9 @@ Windows 若 `python -m pip install -e .` 没装进刚建的环境，可显式运
 兼容旧配置：仍可直接把 `python <绝对路径>/_meta/mcp_server.py` 当作 MCP
 命令。完整示例见 [`_meta/client_config_example.json`](_meta/client_config_example.json)。
 
-安装后让 AI 依次调用 `get_context`、`get_turn_time`、`get_task_context`。
-能读到你刚填写的核心记忆和当前任务快照，就接通了。
+安装后，如果宿主没有预载上下文，让 AI 依次调用 `get_context`、
+`get_turn_time`、`get_task_context`。能读到你刚填写的核心记忆和当前任务
+快照，就接通了；宿主已经注入预载标记时按下面的节奏跳过重复调用。
 
 ### 不 clone 源码，只安装命令
 
@@ -98,9 +109,13 @@ docker compose up -d
 
 推荐调用节奏：
 
-1. 新任务首轮：`get_context` + `get_turn_time` + `get_task_context`。
-2. 后续每轮：只刷新 `get_turn_time`。
-3. 跨日、上下文恢复、聊到截止日期或任务发生变化时，再刷新 `get_task_context`。
+1. 新任务首轮：有 `<VAULT_CORE_PRELOADED>` 就直接使用；出现
+   `<VAULT_CORE_PRELOAD_FALLBACK>` 或没有 core 预载标记时，调用一次
+   `get_context`。
+2. 每个用户回合：有 `<TURN_TIME_PRELOADED>` 就直接使用；没有时调用一次
+   `get_turn_time`。
+3. 每个新任务调用一次 `get_task_context`；仅当宿主明确说明任务快照也已预载
+   时跳过。跨日、上下文恢复、聊到截止日期或任务发生变化时再刷新。
 4. 涉及旧项目、人物、偏好或决策时，先搜索再精读。
 
 这套节奏已写进 MCP instructions 和 `_meta/cli/global-agent-workflow.md`。
