@@ -14,6 +14,9 @@
   structured-fact routing.
 - Keep loopback HTTP smoke tests off ambient SOCKS/HTTP proxies by creating the
   local test client with `trust_env=False`.
+- Support one scheduled future successor per fact key: keep the current value
+  effective through the previous day, then switch reads automatically on
+  `valid_from` without a background job.
 
 ## 0.6.0 - 2026-07-25
 

@@ -39,6 +39,11 @@ Search before writing. Prefer updating or linking an existing note over creating
 a duplicate. Do not promote guesses, temporary debugging details, or one-off
 jokes into long-term memory.
 
+For a scheduled fact change, pass a future `valid_from`. `write_fact` keeps the
+current same-key version effective through the previous day and stores one
+non-overlapping pending successor. Default fact reads switch automatically on
+the effective date; a conflicting second pending successor is rejected.
+
 ## Shared task ledger
 
 Use `tasks/` for work another device or agent must be able to resume without the

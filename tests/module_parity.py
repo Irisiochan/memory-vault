@@ -7,11 +7,13 @@ SERVER = ROOT / "_meta" / "mcp_server.py"
 CONTEXT = ROOT / "_meta" / "vault_context.py"
 WORKFLOW = ROOT / "_meta" / "cli" / "global-agent-workflow.md"
 RULES = ROOT / "_meta" / "rules.md"
+FACT_SCHEMA = ROOT / "_meta" / "schemas" / "fact.md"
 
 server_text = SERVER.read_text(encoding="utf-8")
 context_text = CONTEXT.read_text(encoding="utf-8")
 workflow_text = WORKFLOW.read_text(encoding="utf-8")
 rules_text = RULES.read_text(encoding="utf-8")
+fact_schema_text = FACT_SCHEMA.read_text(encoding="utf-8")
 tree = ast.parse(server_text)
 assert len(server_text.splitlines()) < 300
 
@@ -56,5 +58,7 @@ for marker in (
     assert marker in rules_text, f"rules missing {marker}"
 
 assert "write_fact" in rules_text
+assert "scheduled fact change" in rules_text
+assert "待生效预约" in fact_schema_text
 
 print("memory-vault module parity: ok")

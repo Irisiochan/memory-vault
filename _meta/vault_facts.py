@@ -136,6 +136,19 @@ def all_facts(domain: str = "") -> list[dict]:
     return facts
 
 
+def _fact_validity_bounds(
+    fact: dict,
+) -> tuple[datetime.date | None, datetime.date | None] | None:
+    valid_from = fact.get("valid_from")
+    valid_until = fact.get("valid_until")
+    try:
+        starts = datetime.date.fromisoformat(str(valid_from)) if valid_from else None
+        ends = datetime.date.fromisoformat(str(valid_until)) if valid_until else None
+    except (TypeError, ValueError):
+        return None
+    return starts, ends
+
+
 def is_fact_effective(
     fact: dict,
     on_date: datetime.date | None = None,
@@ -145,13 +158,10 @@ def is_fact_effective(
     if fact.get("status") != "active":
         return False
     effective_date = on_date or rt.today()
-    valid_from = fact.get("valid_from")
-    valid_until = fact.get("valid_until")
-    try:
-        starts = datetime.date.fromisoformat(str(valid_from)) if valid_from else None
-        ends = datetime.date.fromisoformat(str(valid_until)) if valid_until else None
-    except (TypeError, ValueError):
+    bounds = _fact_validity_bounds(fact)
+    if bounds is None:
         return False
+    starts, ends = bounds
     return (
         (starts is None or starts <= effective_date)
         and (ends is None or effective_date <= ends)
@@ -273,7 +283,7 @@ def write_fact(
     note: str = "",
     source: str = "unknown",
 ) -> str:
-    """写入结构化事实，并收敛同 domain+key 的旧 active 版本。"""
+    """写入结构化事实，并收敛或预约切换同 domain+key 的 active 版本。"""
     if domain not in FACT_DOMAINS or not FACT_DOMAIN_RE.fullmatch(domain):
         return f"domain 只能是：{', '.join(FACT_DOMAINS)}。"
     if not FACT_KEY_RE.fullmatch(key):
@@ -294,7 +304,8 @@ def write_fact(
     except (TypeError, ValueError):
         return "value 必须是可 JSON 序列化的标量、列表或对象。"
 
-    valid_from = valid_from or rt.today().isoformat()
+    today = rt.today()
+    valid_from = valid_from or today.isoformat()
     error = _validate_iso_date(valid_from, "valid_from")
     if error:
         return error
@@ -303,6 +314,8 @@ def write_fact(
         return error
     if valid_until and valid_until < valid_from:
         return "valid_until 不能早于 valid_from。"
+    starts = datetime.date.fromisoformat(valid_from)
+    is_scheduled = starts > today
 
     now_iso = rt.now().isoformat(timespec="seconds")
     with _fact_lock:
@@ -334,9 +347,49 @@ def write_fact(
                     f"(`{fact.get('id')}`)"
                 )
 
+        active_with_bounds = [
+            (fact, _fact_validity_bounds(fact))
+            for fact in active_same_key
+        ]
+        malformed_active = [
+            fact.get("id", "unknown")
+            for fact, bounds in active_with_bounds
+            if bounds is None
+        ]
+        if malformed_active:
+            return (
+                "拒绝写入：同 key active fact 的有效期无法解析："
+                f"{', '.join(malformed_active)}。"
+            )
+        pending_same_key = [
+            fact
+            for fact, bounds in active_with_bounds
+            if (
+                bounds is not None
+                and bounds[0] is not None
+                and bounds[0] > today
+            )
+        ]
+        current_same_key = [
+            fact
+            for fact in active_same_key
+            if is_fact_effective(fact, today)
+        ]
+        if is_scheduled and pending_same_key:
+            pending = pending_same_key[0]
+            return (
+                f"拒绝写入：{domain}.{key} 已有待生效预约 "
+                f"`{pending.get('id')}`（valid_from={pending.get('valid_from')}）。"
+            )
+        if is_scheduled and len(current_same_key) > 1:
+            return (
+                f"拒绝写入：{domain}.{key} 当前存在 {len(current_same_key)} 个有效版本，"
+                "无法安全建立预约切换。"
+            )
+
         candidate_active = [
             fact for fact in facts
-            if fact.get("status") == "active" and fact.get("key") != key
+            if fact.get("key") != key and is_fact_effective(fact, today)
         ] + [{"type": type}]
         explicit_count = sum(fact.get("type") == "explicit" for fact in candidate_active)
         inferred_count = sum(fact.get("type") == "inferred" for fact in candidate_active)
@@ -348,10 +401,17 @@ def write_fact(
 
         safe_key = re.sub(r"[^a-z0-9]+", "-", key).strip("-")
         fact_id = f"{domain}.{safe_key}--{uuid.uuid4().hex[:12]}"
-        for fact in active_same_key:
-            fact["status"] = "superseded"
-            fact["superseded_by"] = fact_id
-            fact["updated"] = now_iso
+        if is_scheduled:
+            cutoff = starts - datetime.timedelta(days=1)
+            for fact in current_same_key:
+                fact["valid_until"] = cutoff.isoformat()
+                fact["superseded_by"] = fact_id
+                fact["updated"] = now_iso
+        else:
+            for fact in active_same_key:
+                fact["status"] = "superseded"
+                fact["superseded_by"] = fact_id
+                fact["updated"] = now_iso
         facts.append(
             {
                 "id": fact_id,
@@ -373,5 +433,15 @@ def write_fact(
         f"auto: fact {domain}.{key} (source: {source})",
         filepath,
     )
+    if is_scheduled:
+        predecessor = (
+            f"，当前版本保持有效至 {(starts - datetime.timedelta(days=1)).isoformat()}"
+            if current_same_key
+            else ""
+        )
+        return (
+            f"已预约 fact：{domain}.{key} (`{fact_id}`)，将于 {valid_from} 生效"
+            f"{predecessor} {sync_status}"
+        )
     replaced = f"，取代 {len(active_same_key)} 个旧 active 版本" if active_same_key else ""
     return f"已写入 fact：{domain}.{key} (`{fact_id}`){replaced} {sync_status}"

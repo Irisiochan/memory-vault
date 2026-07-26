@@ -116,6 +116,8 @@ docker compose up -d
 
 Fact 的 `valid_from` / `valid_until` 会参与读取：默认 `get_facts` 和 compact
 context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完整版本用于审计。
+同 key 写入未来 `valid_from` 时会建立预约切换：当前版本保持到生效日前一天，
+到期后读取层自动切换；每个 key 同时最多保留一个待生效预约。
 
 推荐调用节奏：
 
