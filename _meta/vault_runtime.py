@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import threading
 import time
+from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -37,9 +38,21 @@ CORE_FILES = [
 TZ = ZoneInfo("Asia/Shanghai")
 GIT_SYNC_MODE = "auto"
 
+_mutation_lock = threading.RLock()
 _git_lock = threading.Lock()
 _last_pull = 0.0
 _WEEKDAY_CN = "一二三四五六日"
+
+
+def serialized_mutation(function):
+    """Serialize a complete read-modify-write-sync mutation in this process."""
+
+    @wraps(function)
+    def locked(*args, **kwargs):
+        with _mutation_lock:
+            return function(*args, **kwargs)
+
+    return locked
 
 
 def configure(vault: str | Path | None = None, *, initialize: bool = True) -> None:
@@ -164,7 +177,7 @@ def pull_if_stale() -> None:
     global _last_pull
     if not git_enabled():
         return
-    with _git_lock:
+    with _mutation_lock, _git_lock:
         if time.time() - _last_pull < PULL_INTERVAL:
             return
         try:
@@ -194,7 +207,7 @@ def git_sync(message: str, *changed_paths: Path) -> str:
     if not relative_paths:
         return "（已保存到本地 vault；没有可同步路径）"
 
-    with _git_lock:
+    with _mutation_lock, _git_lock:
         try:
             staged_before = {
                 line.strip()

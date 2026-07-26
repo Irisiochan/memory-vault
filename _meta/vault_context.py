@@ -24,7 +24,7 @@ def get_core_context(
     if source == "compact":
         selected = [
             fact for fact in facts.all_facts()
-            if fact.get("status") == "active"
+            if facts.is_fact_effective(fact)
             and fact.get("priority") in ("pinned", "high")
         ]
         return facts.render_compact_fact_context(selected)

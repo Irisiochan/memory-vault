@@ -7,11 +7,26 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def local_http_client(
+    headers: dict[str, str] | None = None,
+    timeout: httpx.Timeout | None = None,
+    auth: httpx.Auth | None = None,
+) -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        headers=headers,
+        timeout=timeout,
+        auth=auth,
+        follow_redirects=True,
+        trust_env=False,
+    )
 
 
 def free_port() -> int:
@@ -21,7 +36,10 @@ def free_port() -> int:
 
 
 async def call_server(url: str) -> None:
-    async with streamablehttp_client(url) as (read_stream, write_stream, _):
+    async with streamablehttp_client(
+        url,
+        httpx_client_factory=local_http_client,
+    ) as (read_stream, write_stream, _):
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             tools = await session.list_tools()

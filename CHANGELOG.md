@@ -6,6 +6,14 @@
   core and turn-time preload markers, avoiding duplicate context calls.
 - Keep task snapshots independent from core preload state and document the
   exact cadence in the reusable templates and README.
+- Serialize every MCP mutation across its full read-modify-write and Git-sync
+  cycle so concurrent clients cannot overwrite one another's updates.
+- Apply `valid_from` and `valid_until` to default active fact reads and compact
+  context while retaining `status=all` as the unfiltered audit view.
+- Align `_meta/rules.md` and bundled templates with preload-aware reads and
+  structured-fact routing.
+- Keep loopback HTTP smoke tests off ambient SOCKS/HTTP proxies by creating the
+  local test client with `trust_env=False`.
 
 ## 0.6.0 - 2026-07-25
 

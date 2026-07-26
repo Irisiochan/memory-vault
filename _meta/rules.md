@@ -5,8 +5,15 @@ when the vault is not a Git repository, writes remain local.
 
 ## MCP read cadence
 
-- Every user turn: `get_turn_time` for a fresh, short timestamp.
-- First turn of a new task: `get_context` plus `get_task_context` once.
+- Every user turn: use `<TURN_TIME_PRELOADED>` when the host injected it;
+  otherwise call `get_turn_time` once.
+- First turn of a new task: use `<VAULT_CORE_PRELOADED>` when present and do
+  not repeat `get_context` or `get_core_context`. With
+  `<VAULT_CORE_PRELOAD_FALLBACK>`, or no core preload marker, call
+  `get_context` once.
+- Call `get_task_context` once for each new task because core preload does not
+  contain the task snapshot. Skip it only when the host explicitly says the
+  task snapshot is already preloaded.
 - Refresh `get_task_context` only after a date change, context recovery, task
   mutation, or when discussing deadlines/task state.
 - Topic history: `search_vault`, then `read_file`; use `get_related` for
@@ -19,7 +26,8 @@ so long conversations do not retain stale dates, tasks, or diary entries.
 
 | Content | Destination | MCP tool |
 |---|---|---|
-| Confirmed fact, preference, relationship change | `memories/{slug}.md` | `write_memory` |
+| Confirmed structured fact, preference, relationship change | `memories/facts/{domain}.md` | `write_fact` |
+| Confirmed memory that needs narrative context | `memories/{slug}.md` | `write_memory` |
 | Uncertain inference or unverified information | `inbox/YYYY-MM-DD_{slug}.md` | `write_inbox`, later `promote_to_memory` |
 | Daily event or life log | append `diary/YYYY-MM-DD.md` | `log_daily` |
 | Full diary entry, phase summary, milestone | `diary/YYYY-MM-DD_{slug}.md` | `write_diary` |

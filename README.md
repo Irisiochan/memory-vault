@@ -6,7 +6,7 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
-## 当前 main：识别宿主预载，避免重复上下文
+## 当前 main：预载感知与写入一致性
 
 有些客户端会在用户消息前自动注入 Memory Vault 的核心上下文或当前时间。
 MCP instructions、工具说明和跨 CLI 工作流现在会识别
@@ -15,6 +15,9 @@ MCP instructions、工具说明和跨 CLI 工作流现在会识别
 
 核心预载不包含任务快照；除非宿主明确说明任务快照也已预载，每个新任务仍调用一次
 `get_task_context`。这样既保留截止事项提醒，也不会在长会话里反复堆叠同一份上下文。
+
+当前主线也会串行化同一服务进程中的完整写事务，避免并发客户端覆盖彼此的更新；
+Fact 的有效期会参与默认 active 读取和 compact context 过滤。
 
 ## v0.5.0：记忆系统与客户端正式解耦
 
@@ -106,6 +109,13 @@ docker compose up -d
 | 低置信度 | `write_inbox` / `list_inbox` / `promote_to_memory` | 暂存推测，验证后升级 |
 | 日常 | `log_daily` / `write_diary` | 生活流水 / 完整日记与阶段总结 |
 | 任务 | `add_task` / `update_task` | 新建待办；完成或放弃时自动归档 |
+
+所有 MCP 写工具在同一服务进程内共享一把可重入写锁，覆盖完整的
+“读取 → 修改 → 落盘 → Git 同步”事务，避免多个 HTTP 客户端或 AI 同时更新同一
+文件时互相覆盖。多个独立服务进程不要同时写同一个 vault。
+
+Fact 的 `valid_from` / `valid_until` 会参与读取：默认 `get_facts` 和 compact
+context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完整版本用于审计。
 
 推荐调用节奏：
 
@@ -205,6 +215,7 @@ Memory Vault Docker/MCP 依赖运行，不复制维护本仓库源码；只想�
 python tests/smoke.py
 python tests/protocol_smoke.py
 python tests/http_smoke.py
+python tests/concurrent_writes.py
 python tests/repository_boundary.py
 python -m build
 docker build -t memory-vault-mcp .

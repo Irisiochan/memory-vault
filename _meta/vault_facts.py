@@ -136,6 +136,28 @@ def all_facts(domain: str = "") -> list[dict]:
     return facts
 
 
+def is_fact_effective(
+    fact: dict,
+    on_date: datetime.date | None = None,
+) -> bool:
+    """Return whether an active fact is effective on the requested vault date."""
+
+    if fact.get("status") != "active":
+        return False
+    effective_date = on_date or rt.today()
+    valid_from = fact.get("valid_from")
+    valid_until = fact.get("valid_until")
+    try:
+        starts = datetime.date.fromisoformat(str(valid_from)) if valid_from else None
+        ends = datetime.date.fromisoformat(str(valid_until)) if valid_until else None
+    except (TypeError, ValueError):
+        return False
+    return (
+        (starts is None or starts <= effective_date)
+        and (ends is None or effective_date <= ends)
+    )
+
+
 def _format_fact_value(value: object) -> str:
     if isinstance(value, str):
         return value
@@ -149,7 +171,7 @@ def render_compact_fact_context(facts: list[dict]) -> str:
     lines = [
         title,
         "",
-        "以下内容由 fact 层实时生成；只包含 active 且 priority 为 pinned/high 的事实。",
+        "以下内容由 fact 层实时生成；只包含当前有效、active 且 priority 为 pinned/high 的事实。",
         "",
     ]
     for fact in sorted(facts, key=lambda item: (item.get("domain", ""), item.get("key", ""))):
@@ -166,7 +188,10 @@ def render_compact_fact_context(facts: list[dict]) -> str:
 
 
 def get_facts(domain: str = "", status: str = "active", priority: str = "") -> str:
-    """查询结构化事实；默认只返回 active，可按域、状态和优先级过滤。"""
+    """查询结构化事实；默认只返回当前有效的 active facts。
+
+    status=all 用于审计，会包含尚未生效或已经过期但存储状态仍为 active 的版本。
+    """
     if domain and domain not in FACT_DOMAINS:
         return f"domain 只能是：{', '.join(FACT_DOMAINS)}。"
     if status != "all" and status not in FACT_STATUSES:
@@ -181,7 +206,17 @@ def get_facts(domain: str = "", status: str = "active", priority: str = "") -> s
     filtered = [
         fact
         for fact in facts
-        if (status == "all" or fact.get("status") == status)
+        if (
+            status == "all"
+            or (
+                status == "active"
+                and is_fact_effective(fact)
+            )
+            or (
+                status != "active"
+                and fact.get("status") == status
+            )
+        )
         and (not priority or fact.get("priority") == priority)
     ]
     if not filtered:
@@ -203,6 +238,10 @@ def get_facts(domain: str = "", status: str = "active", priority: str = "") -> s
         lines.append(
             f"  - source_refs: {', '.join(str(ref) for ref in fact.get('source_refs') or [])}"
         )
+        lines.append(
+            f"  - validity: {fact.get('valid_from') or 'open'} → "
+            f"{fact.get('valid_until') or 'open'}"
+        )
         if fact.get("superseded_by"):
             lines.append(f"  - superseded_by: {fact['superseded_by']}")
         if str(fact.get("note") or "").strip():
@@ -220,6 +259,7 @@ def _validate_iso_date(value: str, field: str, allow_empty: bool = False) -> str
     return None
 
 
+@rt.serialized_mutation
 def write_fact(
     domain: str,
     key: str,

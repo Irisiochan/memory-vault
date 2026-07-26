@@ -1,3 +1,4 @@
+import datetime
 import importlib.util
 import os
 import tempfile
@@ -63,6 +64,40 @@ with tempfile.TemporaryDirectory(prefix="memory-vault-facts-") as temp:
     compact = server.get_core_context(source="compact")
     assert "preferences.theme" in compact and "light" in compact
     assert "dark" not in compact
+
+    today = server._today()
+    expired = server.write_fact(
+        "preferences",
+        "expired-example",
+        "expired-value-must-not-be-active",
+        ["tests/fact_layer.py"],
+        priority="pinned",
+        valid_from=(today - datetime.timedelta(days=2)).isoformat(),
+        valid_until=(today - datetime.timedelta(days=1)).isoformat(),
+        source="test",
+    )
+    assert "已写入 fact" in expired
+    future = server.write_fact(
+        "preferences",
+        "future-example",
+        "future-value-must-not-be-active",
+        ["tests/fact_layer.py"],
+        priority="pinned",
+        valid_from=(today + datetime.timedelta(days=1)).isoformat(),
+        source="test",
+    )
+    assert "已写入 fact" in future
+
+    effective = server.get_facts("preferences")
+    assert "expired-value-must-not-be-active" not in effective
+    assert "future-value-must-not-be-active" not in effective
+    audit = server.get_facts("preferences", status="all")
+    assert "expired-value-must-not-be-active" in audit
+    assert "future-value-must-not-be-active" in audit
+    compact = server.get_core_context(source="compact")
+    assert "expired-value-must-not-be-active" not in compact
+    assert "future-value-must-not-be-active" not in compact
+
     search = server.search_vault("preferences theme")
     assert "memories/facts/preferences.md" in search
     blocked_update = server.update_memory(

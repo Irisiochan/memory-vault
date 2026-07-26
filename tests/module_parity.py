@@ -6,10 +6,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = ROOT / "_meta" / "mcp_server.py"
 CONTEXT = ROOT / "_meta" / "vault_context.py"
 WORKFLOW = ROOT / "_meta" / "cli" / "global-agent-workflow.md"
+RULES = ROOT / "_meta" / "rules.md"
 
 server_text = SERVER.read_text(encoding="utf-8")
 context_text = CONTEXT.read_text(encoding="utf-8")
 workflow_text = WORKFLOW.read_text(encoding="utf-8")
+rules_text = RULES.read_text(encoding="utf-8")
 tree = ast.parse(server_text)
 assert len(server_text.splitlines()) < 300
 
@@ -51,5 +53,8 @@ for marker in (
     assert marker in server_text, f"MCP instructions missing {marker}"
     assert marker in context_text, f"context tool docs missing {marker}"
     assert marker in workflow_text, f"workflow missing {marker}"
+    assert marker in rules_text, f"rules missing {marker}"
+
+assert "write_fact" in rules_text
 
 print("memory-vault module parity: ok")

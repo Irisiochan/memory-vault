@@ -7,6 +7,7 @@ from pathlib import Path
 from _meta import vault_runtime as rt
 
 
+@rt.serialized_mutation
 def write_inbox(
     slug: str,
     title: str,
@@ -114,6 +115,7 @@ def archive_processed_hub_auto_inbox(
     return destination
 
 
+@rt.serialized_mutation
 def promote_to_memory(filename: str) -> str:
     """将 inbox 文件升级为正式 memory；hub-auto 来源改为留痕归档。"""
     source_path = inbox_source(filename)
@@ -171,6 +173,7 @@ def promote_to_memory(filename: str) -> str:
     )
 
 
+@rt.serialized_mutation
 def write_memory(
     slug: str,
     title: str,
@@ -202,6 +205,7 @@ def write_memory(
     return f"已写入：memories/{slug}.md {sync}"
 
 
+@rt.serialized_mutation
 def update_memory(
     path: str,
     content: str,
@@ -244,6 +248,7 @@ def update_memory(
     return f"已{'追加' if mode == 'append' else '重写'}：{relative} {sync}"
 
 
+@rt.serialized_mutation
 def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
     """软删除活跃内容到 _archive/retired。"""
     filepath = rt.safe_md(path)
@@ -288,6 +293,7 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
     )
 
 
+@rt.serialized_mutation
 def log_daily(content: str, source: str = "unknown") -> str:
     """向当天流水日记追加一条带时间的记录。"""
     current = rt.now()
@@ -313,6 +319,7 @@ def log_daily(content: str, source: str = "unknown") -> str:
     return f"已记录到 diary/{filepath.name} {sync}"
 
 
+@rt.serialized_mutation
 def write_diary(
     slug: str,
     title: str,

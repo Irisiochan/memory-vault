@@ -48,6 +48,7 @@ def time_sensitive_lines() -> list[str]:
     return ["## ⏰ 时间敏感事项", "", *items, ""] if items else []
 
 
+@rt.serialized_mutation
 def add_task(
     slug: str,
     title: str,
@@ -86,7 +87,6 @@ def add_task(
         if not vault_writes.is_hub_auto_inbox(source_path):
             return "source_inbox 仅允许 type: hub-auto 的 inbox 文件。"
     today = rt.today().isoformat()
-    tag_lines = "\n".join(f"  - {tag}" for tag in (tags or [])) or "  - task"
     meta = {
         "type": "task",
         "created": today,
@@ -119,6 +119,7 @@ def add_task(
     )
 
 
+@rt.serialized_mutation
 def update_task(path: str, status: str, note: str = "", source: str = "unknown") -> str:
     """更新任务状态，可选追加处理说明。"""
     if status not in ("open", "done", "dropped"):
