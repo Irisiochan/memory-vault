@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+import re
 from pathlib import Path
 
 from _meta import vault_runtime as rt
@@ -294,26 +296,55 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
 
 
 @rt.serialized_mutation
-def log_daily(content: str, source: str = "unknown") -> str:
-    """向当天流水日记追加一条带时间的记录。"""
+def log_daily(
+    content: str,
+    source: str = "unknown",
+    date: str = "",
+    time: str = "",
+) -> str:
+    """向指定日期的流水日记追加记录；默认使用 vault 当前日期和时间。
+
+    ``date`` 与 ``time`` 只用于事后补记，分别接受 YYYY-MM-DD 和 HH:MM。
+    未来日期会被拒绝，避免把流水工具误用成待办提醒。
+    """
     current = rt.now()
-    filepath = rt.VAULT / "diary" / f"{current.date().isoformat()}.md"
+    if date.strip():
+        try:
+            day = datetime.date.fromisoformat(date.strip())
+        except ValueError:
+            return f"date 必须是 YYYY-MM-DD 格式：{date}"
+        if day > current.date():
+            return (
+                f"不能给未来日期记流水：{day.isoformat()}"
+                f"（今天是 {current.date().isoformat()}）"
+            )
+    else:
+        day = current.date()
+
+    if time.strip():
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time.strip()):
+            return f"time 必须是 24 小时制 HH:MM：{time}"
+        stamp = time.strip()
+    else:
+        stamp = current.strftime("%H:%M")
+
+    filepath = rt.VAULT / "diary" / f"{day.isoformat()}.md"
     filepath.parent.mkdir(parents=True, exist_ok=True)
     if not filepath.exists():
         meta = {
             "type": "diary",
-            "created": current.date().isoformat(),
+            "created": day.isoformat(),
             "source": "mixed",
             "tags": ["日常"],
         }
         filepath.write_text(
-            rt.rebuild_file(meta, f"# {current.date().isoformat()} 日常"),
+            rt.rebuild_file(meta, f"# {day.isoformat()} 日常"),
             encoding="utf-8",
         )
     with filepath.open("a", encoding="utf-8") as handle:
-        handle.write(f"\n- **{current.strftime('%H:%M')}** [{source}] {content.strip()}")
+        handle.write(f"\n- **{stamp}** [{source}] {content.strip()}")
     sync = rt.git_sync(
-        f"auto: daily {current.date().isoformat()} (source: {source})",
+        f"auto: daily {day.isoformat()} (source: {source})",
         filepath,
     )
     return f"已记录到 diary/{filepath.name} {sync}"

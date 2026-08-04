@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Rank multi-term AND search matches deterministically by title, headings, body
+  evidence, and vault-directory priority; return the best bounded snippet.
+- Let `log_daily` backfill a past vault-local date and optional `HH:MM` time,
+  while rejecting future dates and malformed timestamps.
+- Report concrete Git add/commit/pull/push failures and retry previously
+  unpushed commits on a later write even when that write creates no new diff.
+- Clarify that phone clients such as Kelivo and RikkaHub cannot use the
+  computer's `127.0.0.1`, document Tailscale URLs, Streamable HTTP `Accept`
+  requirements, token errors, and Docker's loopback-only default.
+
 - Make MCP instructions and context-tool descriptions aware of host-injected
   core and turn-time preload markers, avoiding duplicate context calls.
 - Keep task snapshots independent from core preload state and document the

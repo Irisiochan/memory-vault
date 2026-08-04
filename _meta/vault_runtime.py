@@ -171,6 +171,35 @@ def run_git(*args: str, timeout: int = GIT_TIMEOUT) -> subprocess.CompletedProce
     )
 
 
+def git_error_text(
+    result: subprocess.CompletedProcess,
+    limit: int = 280,
+) -> str:
+    """Compress Git stderr/stdout into one bounded diagnostic line."""
+
+    chunks = []
+    for part in (result.stderr, result.stdout):
+        if part and part.strip():
+            chunks.append(part.strip())
+    text = " | ".join(chunks) if chunks else f"exit {result.returncode}"
+    text = " ".join(text.split())
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
+    return text
+
+
+def unpushed_commit_count(branch: str) -> int | None:
+    """Return commits on HEAD not present in origin/<branch>, if knowable."""
+
+    ahead = run_git("rev-list", "--count", f"origin/{branch}..HEAD")
+    if ahead.returncode != 0:
+        return None
+    try:
+        return int((ahead.stdout or "0").strip() or "0")
+    except ValueError:
+        return None
+
+
 def pull_if_stale() -> None:
     """Throttle read-path pulls; failures leave the readable local snapshot intact."""
 
@@ -191,7 +220,7 @@ def pull_if_stale() -> None:
 
 
 def git_sync(message: str, *changed_paths: Path) -> str:
-    """Commit only this tool call's paths, then rebase and push."""
+    """Commit this tool call's paths, rebase, and push with retryable failures."""
 
     global _last_pull
     if not git_enabled():
@@ -209,9 +238,16 @@ def git_sync(message: str, *changed_paths: Path) -> str:
 
     with _mutation_lock, _git_lock:
         try:
+            committed = False
+            staged_result = run_git("diff", "--cached", "--name-only")
+            if staged_result.returncode != 0:
+                return (
+                    "（已本地保存；无法检查 staged 状态："
+                    f"{git_error_text(staged_result)}）"
+                )
             staged_before = {
                 line.strip()
-                for line in run_git("diff", "--cached", "--name-only").stdout.splitlines()
+                for line in staged_result.stdout.splitlines()
                 if line.strip()
             }
             unexpected = staged_before - set(relative_paths)
@@ -220,26 +256,63 @@ def git_sync(message: str, *changed_paths: Path) -> str:
 
             staged = run_git("add", "--", *relative_paths)
             if staged.returncode != 0:
-                return f"（已保存到本地 vault；暂存失败：{staged.stderr.strip()[:200]}）"
-            if run_git("diff", "--cached", "--quiet").returncode == 0:
-                return "（无变更需要同步）"
+                return f"（已保存到本地 vault；暂存失败：{git_error_text(staged)}）"
 
-            commit = run_git("commit", "-m", message)
-            if commit.returncode != 0:
-                return f"（本地 commit 失败：{commit.stderr.strip()[:200]}）"
+            staged_diff = run_git("diff", "--cached", "--quiet")
+            if staged_diff.returncode not in (0, 1):
+                return (
+                    "（已本地保存；无法检查 staged 差异："
+                    f"{git_error_text(staged_diff)}）"
+                )
+            if staged_diff.returncode == 1:
+                commit = run_git("commit", "-m", message)
+                if commit.returncode != 0:
+                    return f"（本地 commit 失败：{git_error_text(commit)}）"
+                committed = True
 
             pull = run_git("pull", "--rebase")
             if pull.returncode != 0:
                 run_git("rebase", "--abort")
-                return "（已本地保存并 commit，拉取/rebase 失败；请检查远端、冲突或无关工作区改动）"
+                if committed:
+                    return (
+                        "（已本地 commit；pull --rebase 失败，未 push："
+                        f"{git_error_text(pull)}；冲突需人工处理）"
+                    )
+                return (
+                    "（文件已写盘；pull --rebase 失败，未完成补推："
+                    f"{git_error_text(pull)}）"
+                )
+
+            branch_result = run_git("branch", "--show-current")
+            branch = (branch_result.stdout or "").strip() or "main"
+            ahead = unpushed_commit_count(branch)
+            need_push = committed if ahead is None else ahead > 0
+            if not need_push:
+                _last_pull = time.time()
+                return "（无变更需要同步）"
 
             push = run_git("push")
             _last_pull = time.time()
             if push.returncode != 0:
-                return "（已本地保存并 commit，推送失败——可能离线或有冲突，联网后下次写入会自动补推）"
-            return "（已同步到 GitHub）"
-        except subprocess.TimeoutExpired:
-            return "（已本地保存，git 操作超时——网络慢或离线，下次写入自动补推）"
+                return (
+                    "（已本地 commit，push 失败："
+                    f"{git_error_text(push)}；未远端同步。"
+                    "下次写入会重试 pull/push，冲突需人工处理）"
+                )
+            if committed:
+                return "（已同步到 GitHub）"
+            return "（无新变更；已补推此前未推送的提交到 GitHub）"
+        except subprocess.TimeoutExpired as exc:
+            command = (
+                " ".join(str(item) for item in exc.cmd)
+                if getattr(exc, "cmd", None)
+                else "git"
+            )
+            timeout = getattr(exc, "timeout", GIT_TIMEOUT)
+            return (
+                f"（git 超时：{command}（{timeout}s）；"
+                "本地文件可能已写，commit/push 状态请核对后重试）"
+            )
         except OSError as exc:
             return f"（已本地保存，git 调用失败：{exc}）"
 

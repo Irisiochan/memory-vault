@@ -82,16 +82,21 @@ memory-vault-mcp --vault <你的数据目录>
 
 目标目录为空时会自动生成空白 vault；已有 vault 不会被空白核心文件覆盖。
 
-## 一条命令跑 HTTP MCP（Docker）
+## 一条命令跑本机 HTTP MCP（Docker）
 
 ```bash
 docker compose up -d
 ```
 
-- MCP 地址：`http://127.0.0.1:8900/mcp`
+- 本机 MCP 地址：`http://127.0.0.1:8900/mcp`
 - 私有数据：`./vault-data/`（已 gitignore）
-- 默认只绑定本机回环，不直接暴露到局域网或公网
+- 默认只绑定电脑本机回环，不直接暴露到局域网或公网
 - 停止：`docker compose down`；数据不会随容器删除
+
+> **手机不能使用这个 `127.0.0.1` 地址。** 手机 App 里的 `127.0.0.1`
+> 指手机自己，不是运行 Docker 的电脑；默认 `compose.yaml` 也只发布到电脑回环地址。
+> Kelivo、RikkaHub 等手机客户端请使用后文的 Tailscale 接入方式，不要直接把 Docker
+> 端口改成无认证的 `0.0.0.0` 暴露到局域网或公网。
 
 需要认证时，先设置 `VAULT_TOKEN` 再启动；客户端发送
 `Authorization: Bearer <token>` 或 `X-Vault-Token: <token>`。
@@ -134,8 +139,11 @@ context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完
 
 ## 可选 Git 同步
 
-如果 vault 自己是 Git 仓库，MCP 写入会在锁内完成 pull/rebase、显式提交和 push。
+如果 vault 自己是 Git 仓库，MCP 写入会在锁内完成显式提交、pull/rebase 和 push。
 如果没有 `.git`，写入只保存在本地，不会向上寻找并误用父目录远端。
+
+同步失败时，工具返回 Git 的真实错误摘要，不会把本地 commit 误报成远端成功。
+如果上一次 push 失败，后续写入即使没有产生新差异，也会重试补推尚未同步的 commit。
 
 推荐方式：
 
@@ -145,14 +153,33 @@ context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完
 
 ## 手机与远程客户端
 
-电脑和手机在同一 Tailscale 网络时：
+Kelivo、RikkaHub 等手机 App 不能连接电脑的 `127.0.0.1`。推荐让电脑和手机
+登录同一个 Tailscale 网络，然后在电脑上启动：
 
 ```bash
 memory-vault-mcp --vault <vault路径> --http
 ```
 
-服务会优先绑定检测到的 Tailscale IP，默认端口 8900；客户端使用
-`http://<Tailscale-IP>:8900/mcp`，传输类型选 `streamable-http`。
+服务会优先绑定检测到的 Tailscale IP，默认端口 8900。按照启动输出在手机中配置：
+
+- 传输类型：`streamable-http` / `Streamable HTTP`
+- URL：`http://<电脑的Tailscale-IP>:8900/mcp`，例如 `http://100.x.x.x:8900/mcp`
+- 自定义 `Accept`：优先留空，让客户端自动生成；若客户端要求手填，使用
+  `application/json, text/event-stream`，不能只填 `text/event-stream`
+- 认证：服务端设置了 `VAULT_TOKEN` 时，添加
+  `Authorization: Bearer <token>` 或 `X-Vault-Token: <token>`
+
+Streamable HTTP 的 POST 请求必须同时接受 JSON 和 event stream，详见
+[MCP Transport specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)。
+
+常见报错：
+
+| 现象 | 优先检查 |
+|---|---|
+| 连接失败 / connection refused | 是否误填 `127.0.0.1`；电脑服务是否仍在运行；两端 Tailscale 是否在线 |
+| `401 Unauthorized` | 是否漏填或填错 `VAULT_TOKEN` 请求头 |
+| `406 Not Acceptable` / 初始化失败 | 删除自定义 `Accept`，或改为 `application/json, text/event-stream` |
+| 能访问但提示 Host 不允许 | URL 是否使用服务实际绑定并打印出的 Tailscale IP |
 
 需要 24 小时在线可部署到 VPS，见
 [`_meta/deploy/vps_setup.md`](_meta/deploy/vps_setup.md)。
@@ -218,6 +245,7 @@ python tests/smoke.py
 python tests/protocol_smoke.py
 python tests/http_smoke.py
 python tests/concurrent_writes.py
+python tests/maintenance_regressions.py
 python tests/repository_boundary.py
 python -m build
 docker build -t memory-vault-mcp .
