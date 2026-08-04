@@ -33,6 +33,7 @@ jobs:
           python tests/fact_layer.py
           python tests/hub_auto_lifecycle.py
           python tests/concurrent_writes.py
+          python tests/maintenance_regressions.py
           python tests/module_parity.py
           python tests/protocol_smoke.py
           python tests/http_smoke.py

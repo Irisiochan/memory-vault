@@ -17,10 +17,12 @@
       }
     }
   },
-  "_远程端_HTTP模式": {
+  "_远程端_手机端_HTTP模式": {
     "_启动": "memory-vault-mcp --vault <vault路径> --http",
-    "_URL": "http://<服务器的Tailscale-IP>:8900/mcp",
+    "_URL": "http://<电脑或服务器的Tailscale-IP>:8900/mcp",
+    "_URL提醒": "手机里的 127.0.0.1 指手机自己，不能用来连接电脑；Docker 默认地址也只供电脑本机访问",
     "_传输类型": "streamable-http",
+    "_自定义Accept": "优先留空让客户端自动生成；必须手填时使用 application/json, text/event-stream，不能只填 text/event-stream",
     "_可选密钥": "设置 VAULT_TOKEN 后，客户端需发送 Authorization: Bearer <密钥> 或 X-Vault-Token: <密钥>"
   },
   "_ChatGPT自定义App": {

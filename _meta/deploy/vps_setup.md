@@ -45,7 +45,9 @@ systemctl status memory-vault-mcp
 
 验证：`curl -s -X POST http://$(tailscale ip -4):8900/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}'`
 
-手机 App：添加 MCP，类型 streamable-http，URL `http://<VPS的Tailscale-IP>:8900/mcp`。
+手机 App（Kelivo、RikkaHub 等）：添加 MCP，类型选 `streamable-http`，URL 使用
+`http://<VPS的Tailscale-IP>:8900/mcp`。不要填写 `127.0.0.1`；自定义 `Accept`
+优先留空，必须手填时使用 `application/json, text/event-stream`。
 
 ## 公网入口（ChatGPT 自定义 App，可选）
 
