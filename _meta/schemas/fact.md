@@ -40,3 +40,51 @@ updated: '2026-07-23T17:00:00+08:00'
 - `get_facts` 默认只返回当天有效的 active；compact 核心上下文只返回当天有效的
   active pinned/high facts。
 - 事实值、版本状态、有效期和收敛链只通过 `write_fact` 修改。
+
+## date-event value 约定
+
+用于「每年会回来」的日子（生日、纪念日），供 daily check-in 等确定性日期匹配读取。
+**不要**用自由文本塞日期，也不要扫整条 fact 的任意 `YYYY-MM-DD`（会误命中 `valid_from` / `created`）。
+
+### value 形态
+
+```yaml
+value:
+  date: '2001-08-04'   # 首次/锚点日期 YYYY-MM-DD；匹配按 MM-DD（recurring=yearly）
+  recurring: yearly    # 目前只约定 yearly；未声明 recurring 的不要当 date-event 扫
+  label: Iris 生日     # 人读标签，注入线索时用
+```
+
+### 写入规则
+
+- 同一语义只能有一条 active date-event。例如生日只写 `identity.birthday`；
+  `identity.birth` 只保留出生地，**不要**再带 `date`。
+- 纪念日放 `relationships` 域，key 形如 `anniversary.<slug>`
+  （例：`anniversary.cheng_wedding`、`anniversary.cove_cohabitation`）。
+- `priority` 建议 `pinned`（唯一关键日，如本人生日）或 `high`（关系纪念日），
+  以便 compact 核心上下文也能看到；匹配器本身读 `get_facts` active 全集。
+- `write_fact` 的 `value` 必须是上述对象，不要写成纯字符串日期。
+
+### 示例
+
+```yaml
+# 生日
+domain: identity
+key: birthday
+value:
+  date: '2001-08-04'
+  recurring: yearly
+  label: Iris 生日
+priority: pinned
+
+# 纪念日
+domain: relationships
+key: anniversary.cheng_wedding
+value:
+  date: '2026-05-21'
+  recurring: yearly
+  label: 橙与 Iris 新婚纪念日
+priority: high
+```
+
+关联方案：运行 vault 见 `memories/daily-checkin-context-aware-enhancement.md`（模板仓库可省略）。
