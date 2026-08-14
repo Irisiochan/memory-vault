@@ -145,19 +145,21 @@ def read_file(path: str) -> str:
     filepath = rt.safe_md(path)
     if filepath is None:
         return "路径不合法。"
+    rt.pull_if_stale()
     if not filepath.exists():
         return f"文件不存在：{path}"
-    rt.pull_if_stale()
     return filepath.read_text(encoding="utf-8", errors="replace")
 
 
 def get_related(path: str) -> str:
     """沿当前文档的 [[链接]]、标签和反向链接查找相关记忆。"""
     filepath = rt.safe_md(path)
-    if filepath is None or not filepath.exists():
+    if filepath is None:
+        return f"路径不合法或文件不存在：{path}"
+    rt.pull_if_stale()
+    if not filepath.exists():
         return f"路径不合法或文件不存在：{path}"
     relative = filepath.resolve().relative_to(rt.VAULT.resolve()).as_posix()
-    rt.pull_if_stale()
     meta, body = rt.parse_frontmatter(
         filepath.read_text(encoding="utf-8", errors="replace")
     )

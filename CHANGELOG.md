@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 0.7.0 - 2026-08-14
+
+- Pull before checking existence in `read_file` and `get_related`, so a path
+  created by another device is visible on its first direct read.
 - Collapse no-due tasks that have not changed for more than 14 days into a
   title-only dormant summary in `get_task_context`; allow explicit
   `dormant: true|false` frontmatter overrides.

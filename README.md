@@ -6,7 +6,7 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
-## 当前 main：预载感知、任务分层与写入一致性
+## v0.7.0：预载感知、任务分层与写入一致性
 
 有些客户端会在用户消息前自动注入 Memory Vault 的核心上下文或当前时间。
 MCP instructions、工具说明和跨 CLI 工作流现在会识别

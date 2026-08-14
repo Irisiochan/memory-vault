@@ -97,6 +97,47 @@ class SearchRelevanceTest(unittest.TestCase):
         )
 
 
+class DirectReadPullOrderTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.vault = Path(self.temp.name)
+        rt.configure(self.vault)
+        self.original_pull = rt.pull_if_stale
+
+    def tearDown(self):
+        rt.pull_if_stale = self.original_pull
+        self.temp.cleanup()
+
+    def install_remote_file_on_pull(self, relative: str, content: str) -> None:
+        def fake_pull() -> None:
+            path = self.vault / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+
+        rt.pull_if_stale = fake_pull
+
+    def test_read_file_pulls_before_missing_check(self):
+        self.install_remote_file_on_pull(
+            "memories/remote-note.md",
+            "# Remote note\n\nArrived from another device.\n",
+        )
+
+        result = vault_search.read_file("memories/remote-note.md")
+
+        self.assertIn("Arrived from another device.", result)
+
+    def test_get_related_pulls_before_missing_check(self):
+        self.install_remote_file_on_pull(
+            "memories/remote-related.md",
+            "---\ntags: [remote]\n---\n\n# Remote related\n",
+        )
+
+        result = vault_search.get_related("memories/remote-related.md")
+
+        self.assertIn("`memories/remote-related.md`", result)
+        self.assertNotIn("文件不存在", result)
+
+
 class DailyBackfillTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
