@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Collapse no-due tasks that have not changed for more than 14 days into a
+  title-only dormant summary in `get_task_context`; allow explicit
+  `dormant: true|false` frontmatter overrides.
 - Rank multi-term AND search matches deterministically by title, headings, body
   evidence, and vault-directory priority; return the best bounded snippet.
 - Let `log_daily` backfill a past vault-local date and optional `HH:MM` time,

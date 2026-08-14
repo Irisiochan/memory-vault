@@ -29,6 +29,7 @@ jobs:
       - name: Test MCP and repository boundary
         run: |
           python tests/template_sync.py
+          python tests/task_snapshot_tiers.py
           python tests/smoke.py
           python tests/fact_layer.py
           python tests/hub_auto_lifecycle.py

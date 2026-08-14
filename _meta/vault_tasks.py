@@ -8,6 +8,21 @@ import shutil
 from _meta import vault_runtime as rt
 
 _WEEKDAY_CN = "一二三四五六日"
+_DORMANT_AFTER_DAYS = 14
+
+
+def _coerce_iso_date(value: object) -> datetime.date | None:
+    """Normalize YAML date/datetime values and quoted ISO date strings."""
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
 
 
 def time_sensitive_lines() -> list[str]:
@@ -15,7 +30,7 @@ def time_sensitive_lines() -> list[str]:
     if not dirpath.exists():
         return []
     today = rt.today()
-    overdue, due_today, upcoming, no_due = [], [], [], []
+    overdue, due_today, upcoming, no_due, dormant_titles = [], [], [], [], []
     for markdown in sorted(dirpath.glob("*.md")):
         meta, body = rt.parse_frontmatter(
             markdown.read_text(encoding="utf-8", errors="replace")
@@ -31,7 +46,23 @@ def time_sensitive_lines() -> list[str]:
             except ValueError:
                 due = None
         if not isinstance(due, datetime.date):
-            no_due.append(f"- {entry}（无期限，仍未完成）")
+            flag = meta.get("dormant")
+            touched = _coerce_iso_date(meta.get("updated")) or _coerce_iso_date(
+                meta.get("created")
+            )
+            if flag is True:
+                is_dormant = True
+            elif flag is False:
+                is_dormant = False
+            else:
+                is_dormant = (
+                    touched is not None
+                    and (today - touched).days > _DORMANT_AFTER_DAYS
+                )
+            if is_dormant:
+                dormant_titles.append(title)
+            else:
+                no_due.append(f"- {entry}（无期限，仍未完成）")
             continue
         delta = (due - today).days
         if delta < 0:
@@ -45,6 +76,13 @@ def time_sensitive_lines() -> list[str]:
                 f"- {entry} 还有 {delta} 天（{due.isoformat()} 星期{_WEEKDAY_CN[due.weekday()]}）"
             )
     items = overdue + due_today + upcoming + no_due
+    if dormant_titles:
+        items.append(
+            f"- 💤 另有 {len(dormant_titles)} 条无期限任务超过 "
+            f"{_DORMANT_AFTER_DAYS} 天未更新，已转冬眠层只列标题"
+            "（需要详情时 search_vault / read_file）："
+            + "、".join(dormant_titles)
+        )
     return ["## ⏰ 时间敏感事项", "", *items, ""] if items else []
 
 

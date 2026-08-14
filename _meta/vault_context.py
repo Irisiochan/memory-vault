@@ -84,6 +84,9 @@ def get_turn_time() -> str:
 def get_task_context() -> str:
     """返回按当前 vault 日期计算的未完成任务快照。
 
+    无期限任务分为活跃层和冬眠层。超过 14 天未更新的任务默认只汇总
+    标题；frontmatter `dormant: true|false` 可以手动覆盖。
+
     每个新任务首次处理时调用一次；<VAULT_CORE_PRELOADED> 不包含任务
     快照。仅当宿主明确标记任务快照也已预载时不重复调用。之后只在跨日、
     上下文恢复、任务相关话题或任务变更后刷新。

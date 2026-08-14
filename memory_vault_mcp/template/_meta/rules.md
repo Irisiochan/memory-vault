@@ -106,7 +106,9 @@ tags: [tag1, tag2]
 ```
 
 Optional fields: `updated`, `due`, `status: open|done|dropped`, `completed`,
-`archived`, and `archive_reason`.
+`archived`, `archive_reason`, and `dormant: true|false`. For no-due tasks,
+`dormant` forces title-only/full display in `get_task_context`; without an
+override, tasks not updated for more than 14 days enter the dormant summary.
 
 ## Direct-file fallback
 

@@ -6,7 +6,7 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
-## 当前 main：预载感知与写入一致性
+## 当前 main：预载感知、任务分层与写入一致性
 
 有些客户端会在用户消息前自动注入 Memory Vault 的核心上下文或当前时间。
 MCP instructions、工具说明和跨 CLI 工作流现在会识别
@@ -15,6 +15,11 @@ MCP instructions、工具说明和跨 CLI 工作流现在会识别
 
 核心预载不包含任务快照；除非宿主明确说明任务快照也已预载，每个新任务仍调用一次
 `get_task_context`。这样既保留截止事项提醒，也不会在长会话里反复堆叠同一份上下文。
+
+`memory-vault-mcp` 的任务快照会完整展示有期限的任务和最近更新的无期限任务。
+无期限任务超过 14 天没有更新时，默认进入“冬眠层”，只汇总标题，避免长期积压占满
+每轮上下文；需要详情时仍可通过 `search_vault` / `read_file` 读取。任务 frontmatter
+可用 `dormant: true` 强制冬眠，或用 `dormant: false` 保持完整展示。
 
 当前主线也会串行化同一服务进程中的完整写事务，避免并发客户端覆盖彼此的更新；
 Fact 的有效期会参与默认 active 读取和 compact context 过滤。
@@ -108,7 +113,7 @@ docker compose up -d
 | 稳定上下文 | `get_context` | 核心记忆全文 + 其余长期记忆索引 |
 | 核心上下文 | `get_core_context` | narrative 核心文件或 compact 高优先级事实 |
 | 结构化事实 | `write_fact` / `get_facts` | 可追溯写入、版本收敛和筛选读取 |
-| 当前状态 | `get_turn_time` / `get_task_context` | 本轮时间 / 未完成任务快照 |
+| 当前状态 | `get_turn_time` / `get_task_context` | 本轮时间 / 分层的未完成任务快照 |
 | 检索 | `search_vault` / `read_file` / `get_related` | 搜索、精读、沿链接与标签联想 |
 | 长期记忆 | `write_memory` / `update_memory` / `archive_memory` | 写入、修正、软归档 |
 | 低置信度 | `write_inbox` / `list_inbox` / `promote_to_memory` | 暂存推测，验证后升级 |
@@ -132,7 +137,8 @@ context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完
 2. 每个用户回合：有 `<TURN_TIME_PRELOADED>` 就直接使用；没有时调用一次
    `get_turn_time`。
 3. 每个新任务调用一次 `get_task_context`；仅当宿主明确说明任务快照也已预载
-   时跳过。跨日、上下文恢复、聊到截止日期或任务发生变化时再刷新。
+   时跳过。跨日、上下文恢复、聊到截止日期或任务发生变化时再刷新。无期限任务
+   超过 14 天未更新会折叠到冬眠层，可用 `dormant: true|false` 手动覆盖。
 4. 涉及旧项目、人物、偏好或决策时，先搜索再精读。
 
 这套节奏已写进 MCP instructions 和 `_meta/cli/global-agent-workflow.md`。
@@ -242,6 +248,7 @@ Memory Vault Docker/MCP 依赖运行，不复制维护本仓库源码；只想�
 
 ```bash
 python tests/smoke.py
+python tests/task_snapshot_tiers.py
 python tests/protocol_smoke.py
 python tests/http_smoke.py
 python tests/concurrent_writes.py
@@ -251,9 +258,9 @@ python -m build
 docker build -t memory-vault-mcp .
 ```
 
-冒烟测试使用临时 vault，覆盖初始化、本地写入、记忆升级、分离上下文、
-旧 vault 兼容、路径穿越防护、仓库边界，以及真实 stdio / streamable-http
-MCP 握手，不会触碰你的真实数据。
+测试使用临时 vault，覆盖初始化、本地写入、记忆升级、分离上下文、任务冬眠分层、
+旧 vault 兼容、路径穿越防护、仓库边界，以及真实 stdio / streamable-http MCP
+握手，不会触碰你的真实数据。
 
 ## License
 
