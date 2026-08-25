@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 import tempfile
@@ -97,6 +98,55 @@ async def run() -> None:
                     },
                 )
                 assert not task.isError
+
+                rescheduled = await session.call_tool(
+                    "update_task",
+                    {
+                        "path": "tasks/protocol-archive.md",
+                        "status": "open",
+                        "due": "2026-08-10",
+                        "note": "Rescheduled through a real MCP session.",
+                        "source": "test",
+                    },
+                )
+                assert not rescheduled.isError
+                rescheduled_text = "\n".join(
+                    block.text for block in rescheduled.content if hasattr(block, "text")
+                )
+                assert json.loads(rescheduled_text)["ok"] is True, rescheduled_text
+                structured = getattr(rescheduled, "structuredContent", None)
+                assert structured == {
+                    "ok": True,
+                    "code": "task_updated",
+                    "message": structured["message"],
+                    "data": {
+                        "path": "tasks/protocol-archive.md",
+                        "status": "open",
+                        "due": "2026-08-10",
+                    },
+                }, structured
+                reread = await session.call_tool(
+                    "read_file",
+                    {"path": "tasks/protocol-archive.md"},
+                )
+                reread_text = "\n".join(
+                    block.text for block in reread.content if hasattr(block, "text")
+                )
+                assert "due: '2026-08-10'" in reread_text, reread_text
+
+                missing = await session.call_tool(
+                    "update_task",
+                    {
+                        "path": "tasks/does-not-exist.md",
+                        "status": "open",
+                        "note": "Must be machine-readable.",
+                        "source": "test",
+                    },
+                )
+                assert not missing.isError
+                missing_structured = getattr(missing, "structuredContent", None)
+                assert missing_structured["ok"] is False, missing_structured
+                assert missing_structured["code"] == "not_found", missing_structured
 
                 completed = await session.call_tool(
                     "update_task",

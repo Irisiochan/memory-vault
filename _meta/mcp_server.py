@@ -57,6 +57,17 @@ write_diary = vault_writes.write_diary
 add_task = vault_tasks.add_task
 update_task = vault_tasks.update_task
 
+
+def mcp_update_task(
+    path: str,
+    status: str,
+    note: str = "",
+    source: str = "unknown",
+    due: str | None = None,
+) -> dict[str, object]:
+    """更新任务；due 可改期或传 none 清除，返回 ok/code/message/data。"""
+    return vault_tasks.update_task_result(path, status, note, source, due)
+
 for tool in (
     get_core_context,
     get_context,
@@ -77,9 +88,10 @@ for tool in (
     log_daily,
     write_diary,
     add_task,
-    update_task,
 ):
     mcp.tool()(tool)
+
+mcp.tool(name="update_task", structured_output=True)(mcp_update_task)
 
 
 # Compatibility exports for existing direct-import clients and smoke tests.

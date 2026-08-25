@@ -25,9 +25,9 @@ assert "Irisiochan/ai-hub-public" in readme
 assert "docs/migration-v0.5.md" in readme
 
 pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-assert 'version = "0.7.0"' in pyproject
+assert 'version = "0.7.1"' in pyproject
 
 package_init = (ROOT / "memory_vault_mcp" / "__init__.py").read_text(encoding="utf-8")
-assert '__version__ = "0.7.0"' in package_init
+assert '__version__ = "0.7.1"' in package_init
 
 print("memory-vault repository boundary: ok")

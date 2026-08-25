@@ -6,6 +6,16 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
+## v0.7.1：任务改期与结构化写回结果
+
+`update_task` 现在可在同一次原子写入中传入 `due: YYYY-MM-DD` 完成改期，或传
+`due: none` 清除期限；省略 `due` 时保持原日期。MCP 返回稳定的
+`ok` / `code` / `message` / `data` 结构，调用方必须以 `ok: true` 作为写入成功
+依据，不能再把“文件不存在”或“目标不是 task”等普通文本误判为成功。
+
+真实 stdio MCP contract test 会创建任务、改期并重新读取 Markdown，确认
+frontmatter 与工具结果一致。
+
 ## v0.7.0：预载感知、任务分层与写入一致性
 
 有些客户端会在用户消息前自动注入 Memory Vault 的核心上下文或当前时间。
@@ -118,7 +128,7 @@ docker compose up -d
 | 长期记忆 | `write_memory` / `update_memory` / `archive_memory` | 写入、修正、软归档 |
 | 低置信度 | `write_inbox` / `list_inbox` / `promote_to_memory` | 暂存推测，验证后升级 |
 | 日常 | `log_daily` / `write_diary` | 生活流水 / 完整日记与阶段总结 |
-| 任务 | `add_task` / `update_task` | 新建待办；完成或放弃时自动归档 |
+| 任务 | `add_task` / `update_task` | 新建待办；原子改期或清除期限；完成或放弃时自动归档 |
 
 所有 MCP 写工具在同一服务进程内共享一把可重入写锁，覆盖完整的
 “读取 → 修改 → 落盘 → Git 同步”事务，避免多个 HTTP 客户端或 AI 同时更新同一

@@ -157,26 +157,98 @@ def add_task(
     )
 
 
+def _task_update_result(
+    ok: bool,
+    code: str,
+    message: str,
+    *,
+    path: str = "",
+    status: str = "",
+    due: str | None = None,
+) -> dict[str, object]:
+    data: dict[str, object] = {}
+    if path:
+        data["path"] = path
+    if status:
+        data["status"] = status
+    if due is not None:
+        data["due"] = due
+    return {"ok": ok, "code": code, "message": message, "data": data}
+
+
 @rt.serialized_mutation
-def update_task(path: str, status: str, note: str = "", source: str = "unknown") -> str:
-    """更新任务状态，可选追加处理说明。"""
+def update_task_result(
+    path: str,
+    status: str,
+    note: str = "",
+    source: str = "unknown",
+    due: str | None = None,
+) -> dict[str, object]:
+    """原子更新任务状态、可选 due 与处理说明，并返回机器可判定结果。"""
     if status not in ("open", "done", "dropped"):
-        return "status 只能是 open / done / dropped。"
+        return _task_update_result(
+            False,
+            "invalid_status",
+            "status 只能是 open / done / dropped。",
+            path=path,
+            status=status,
+        )
+    due_value: str | None = None
+    if due is not None:
+        candidate = due.strip()
+        if candidate.lower() in ("", "none", "null", "~"):
+            due_value = "none"
+        else:
+            try:
+                datetime.date.fromisoformat(candidate)
+            except ValueError:
+                return _task_update_result(
+                    False,
+                    "invalid_due",
+                    "due 日期格式不对，需要 YYYY-MM-DD；清除期限请传 none。",
+                    path=path,
+                    status=status,
+                    due=candidate,
+                )
+            due_value = candidate
     filepath = rt.safe_md(path)
     if filepath is None or not filepath.relative_to(rt.VAULT).as_posix().startswith("tasks/"):
-        return "路径不合法：只能更新 tasks/ 下的 Markdown。"
+        return _task_update_result(
+            False,
+            "invalid_path",
+            "路径不合法：只能更新 tasks/ 下的 Markdown。",
+            path=path,
+            status=status,
+            due=due_value,
+        )
     if not filepath.exists():
-        return f"文件不存在：{path}"
+        return _task_update_result(
+            False,
+            "not_found",
+            f"文件不存在：{path}",
+            path=path,
+            status=status,
+            due=due_value,
+        )
     meta, body = rt.parse_frontmatter(
         filepath.read_text(encoding="utf-8", errors="replace")
     )
     if meta.get("type") != "task":
-        return "目标文件不是 task。"
+        return _task_update_result(
+            False,
+            "not_task",
+            "目标文件不是 task。",
+            path=path,
+            status=status,
+            due=due_value,
+        )
     relative = filepath.relative_to(rt.VAULT).as_posix()
     today = rt.today().isoformat()
     meta["status"] = status
     meta["updated"] = today
     meta["source"] = source
+    if due_value is not None:
+        meta["due"] = due_value
     if status == "done":
         meta["completed"] = today
     line = f"## 状态变更 {today} → {status}"
@@ -203,13 +275,41 @@ def update_task(path: str, status: str, note: str = "", source: str = "unknown")
             filepath,
             destination,
         )
-        return (
+        message = (
             f"已更新并归档：{relative} → {status}；"
             f"{destination.relative_to(rt.VAULT).as_posix()} {sync}"
+        )
+        return _task_update_result(
+            True,
+            "task_archived",
+            message,
+            path=relative,
+            status=status,
+            due=str(meta.get("due", "none")),
         )
     filepath.write_text(updated, encoding="utf-8")
     sync = rt.git_sync(
         f"auto: task {relative} -> {status} (source: {source})",
         filepath,
     )
-    return f"已更新：{relative} → {status} {sync}"
+    message = f"已更新：{relative} → {status} {sync}"
+    return _task_update_result(
+        True,
+        "task_updated",
+        message,
+        path=relative,
+        status=status,
+        due=str(meta.get("due", "none")),
+    )
+
+
+@rt.serialized_mutation
+def update_task(
+    path: str,
+    status: str,
+    note: str = "",
+    source: str = "unknown",
+    due: str | None = None,
+) -> str:
+    """兼容直接 Python 调用；MCP 工具使用结构化的 update_task_result。"""
+    return str(update_task_result(path, status, note, source, due)["message"])

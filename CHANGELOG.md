@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.7.1 - 2026-08-25
+
+- Let the MCP `update_task` tool atomically change or clear `due` while it
+  records the task note and status update.
+- Return a structured `ok` / `code` / `message` / `data` result from the MCP
+  task-update contract so callers cannot mistake ordinary error text for a
+  successful write.
+- Add a real stdio MCP write-read contract check for rescheduling and
+  structured not-found handling.
+
 ## 0.7.0 - 2026-08-14
 
 - Pull before checking existence in `read_file` and `get_related`, so a path
