@@ -267,11 +267,23 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
         # A retried archive: the move already happened, but an earlier push may
         # have failed. Confirm against the archived copy and finish the sync
         # instead of reporting a missing file and stranding local commits.
+        # Same-named files from other directories must not be claimed, so only
+        # a copy whose recorded `archived_from` matches this exact path counts;
+        # a copy without provenance cannot be confirmed and is never a success.
         retired = rt.VAULT / "_archive" / "retired"
-        archived = sorted(retired.glob(f"????-??-??_{filepath.name}"))
-        if not archived:
+        destination = None
+        for candidate in sorted(retired.glob(f"????-??-??_{filepath.name}"), reverse=True):
+            try:
+                candidate_meta, _ = rt.parse_frontmatter(
+                    candidate.read_text(encoding="utf-8", errors="replace")
+                )
+            except OSError:
+                continue
+            if candidate_meta.get("archived_from") == relative:
+                destination = candidate
+                break
+        if destination is None:
             return f"路径不合法或文件不存在：{path}"
-        destination = archived[-1]
         sync = rt.git_sync(
             f"auto: archive {relative} ({reason[:50]})",
             filepath,
@@ -287,6 +299,7 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
     meta["archived"] = rt.today().isoformat()
     meta["archive_reason"] = reason
     meta["archive_source"] = source
+    meta["archived_from"] = relative
     retired = rt.VAULT / "_archive" / "retired"
     retired.mkdir(parents=True, exist_ok=True)
     destination = retired / f"{rt.today().isoformat()}_{filepath.name}"

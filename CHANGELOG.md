@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.8.2 - 2026-09-07
+
+- Record the full original path (`archived_from`) in every archived copy's
+  frontmatter, and let an archive retry confirm success only against a copy
+  whose recorded origin matches the requested path exactly. A same-named
+  archive from another directory, or a legacy copy without provenance, is
+  reported as "file not found" instead of being claimed as a completed
+  archive.
+
 ## 0.8.1 - 2026-09-07
 
 - Validate read paths AFTER the read-path Git pull, so a symlink materialized

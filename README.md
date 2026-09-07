@@ -12,7 +12,9 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 vault 外符号链接第一次读取就会被拒绝；`search_vault`、`list_memories`、
 `get_related` 和任务快照的扫描入口统一走同一套路径校验，直接跳过符号链接。
 `archive_memory` 在“已归档但 push 失败”后重试时，会确认归档副本并补推
-未同步的提交，而不再报“文件不存在”。
+未同步的提交，而不再报“文件不存在”。v0.8.2 起归档副本 frontmatter 记录
+完整原始路径（`archived_from`），重试只认路径完全匹配的副本；同名不同目录
+或无来源信息的旧副本不会被误认成功。
 
 ## v0.8.0：跨进程写安全
 

@@ -247,6 +247,30 @@ class ArchiveRetrySyncTest(unittest.TestCase):
 
         self.assertIn("文件不存在", result)
 
+    def test_retry_never_claims_a_same_named_archive_from_another_directory(self):
+        (self.vault / "memories").mkdir(parents=True, exist_ok=True)
+        (self.vault / "memories" / "retry.md").write_text(
+            "# 记忆\n\n内容。\n", encoding="utf-8"
+        )
+        vault_writes.archive_memory("memories/retry.md", "过时", "test")
+
+        result = vault_writes.archive_memory("projects/retry.md", "过时", "test")
+
+        self.assertIn("文件不存在", result)
+        self.assertNotIn("此前已归档", result)
+
+    def test_retry_rejects_archived_copy_without_recorded_origin(self):
+        retired = self.vault / "_archive" / "retired"
+        retired.mkdir(parents=True, exist_ok=True)
+        (retired / "2026-01-01_legacy.md").write_text(
+            "---\narchived: '2026-01-01'\n---\n\n# 旧副本\n", encoding="utf-8"
+        )
+
+        result = vault_writes.archive_memory("memories/legacy.md", "x", "test")
+
+        self.assertIn("文件不存在", result)
+        self.assertNotIn("此前已归档", result)
+
 
 class DailyBackfillTest(unittest.TestCase):
     def setUp(self):
