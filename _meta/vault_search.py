@@ -110,12 +110,15 @@ def search_vault(query: str) -> str:
         if not dirpath.exists():
             continue
         for markdown in sorted(dirpath.rglob("*.md")):
-            full_text = markdown.read_text(encoding="utf-8", errors="replace")
+            relative_path = markdown.relative_to(rt.VAULT).as_posix()
+            safe = rt.safe_md(relative_path)
+            if safe is None or not safe.is_file():
+                continue
+            full_text = safe.read_text(encoding="utf-8", errors="replace")
             lowered = full_text.lower()
             if not all(keyword in lowered for keyword in keywords):
                 continue
             _, body = rt.parse_frontmatter(full_text)
-            relative_path = markdown.relative_to(rt.VAULT).as_posix()
             title = rt.extract_h1(body) or markdown.stem
             matches.append(
                 {
@@ -142,22 +145,22 @@ def search_vault(query: str) -> str:
 
 def read_file(path: str) -> str:
     """读取 vault 内的 Markdown 文件。"""
+    # Validate AFTER the pull: a pull may materialize a symlink at this path,
+    # and pre-pull validation would let the first read follow it outside.
+    rt.pull_if_stale()
     filepath = rt.safe_md(path)
     if filepath is None:
         return "路径不合法。"
-    rt.pull_if_stale()
-    if not filepath.exists():
+    if not filepath.is_file():
         return f"文件不存在：{path}"
     return filepath.read_text(encoding="utf-8", errors="replace")
 
 
 def get_related(path: str) -> str:
     """沿当前文档的 [[链接]]、标签和反向链接查找相关记忆。"""
-    filepath = rt.safe_md(path)
-    if filepath is None:
-        return f"路径不合法或文件不存在：{path}"
     rt.pull_if_stale()
-    if not filepath.exists():
+    filepath = rt.safe_md(path)
+    if filepath is None or not filepath.is_file():
         return f"路径不合法或文件不存在：{path}"
     relative = filepath.resolve().relative_to(rt.VAULT.resolve()).as_posix()
     meta, body = rt.parse_frontmatter(

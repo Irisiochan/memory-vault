@@ -254,7 +254,7 @@ def update_memory(
 def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
     """软删除活跃内容到 _archive/retired。"""
     filepath = rt.safe_md(path)
-    if filepath is None or not filepath.exists():
+    if filepath is None:
         return f"路径不合法或文件不存在：{path}"
     relative = filepath.resolve().relative_to(rt.VAULT.resolve()).as_posix()
     if relative.split("/")[0] not in rt.ACTIVE_DIRS:
@@ -263,6 +263,24 @@ def archive_memory(path: str, reason: str, source: str = "unknown") -> str:
         return f"{relative} 由 fact 层维护，不允许整域归档；请用 write_fact 写入新版本收敛旧事实。"
     if rt.is_core(relative):
         return f"{relative} 是核心身份文件，不允许归档。"
+    if not filepath.exists():
+        # A retried archive: the move already happened, but an earlier push may
+        # have failed. Confirm against the archived copy and finish the sync
+        # instead of reporting a missing file and stranding local commits.
+        retired = rt.VAULT / "_archive" / "retired"
+        archived = sorted(retired.glob(f"????-??-??_{filepath.name}"))
+        if not archived:
+            return f"路径不合法或文件不存在：{path}"
+        destination = archived[-1]
+        sync = rt.git_sync(
+            f"auto: archive {relative} ({reason[:50]})",
+            filepath,
+            destination,
+        )
+        return (
+            f"该文件此前已归档：{relative} → "
+            f"{destination.relative_to(rt.VAULT).as_posix()}，本次确认同步 {sync}"
+        )
     meta, body = rt.parse_frontmatter(
         filepath.read_text(encoding="utf-8", errors="replace")
     )

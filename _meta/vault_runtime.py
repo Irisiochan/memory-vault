@@ -367,11 +367,15 @@ def scan_files(dirs: list[str] | None = None) -> list[dict]:
         if not dirpath.exists():
             continue
         for markdown in sorted(dirpath.rglob("*.md")):
-            text = markdown.read_text(encoding="utf-8", errors="replace")
+            relative = markdown.relative_to(VAULT).as_posix()
+            safe = safe_md(relative)
+            if safe is None or not safe.is_file():
+                continue
+            text = safe.read_text(encoding="utf-8", errors="replace")
             meta, body = parse_frontmatter(text)
             results.append(
                 {
-                    "path": markdown.relative_to(VAULT).as_posix(),
+                    "path": relative,
                     "title": extract_h1(body) or markdown.stem,
                     "type": meta.get("type", ""),
                     "source": meta.get("source", ""),

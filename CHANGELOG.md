@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.8.1 - 2026-09-07
+
+- Validate read paths AFTER the read-path Git pull, so a symlink materialized
+  by a pull can never be followed outside the vault on its first read.
+- Route every scan entry point (`search_vault`, `scan_files` behind
+  `list_memories` / `get_related`, and the task snapshot) through the same
+  `safe_md` validation, skipping symlinked or otherwise invalid Markdown
+  instead of reading it.
+- Let a retried `archive_memory` whose move already committed confirm the
+  archived copy and finish the pending pull/push instead of returning
+  "file not found" and stranding unpushed commits.
+
 ## 0.8.0 - 2026-09-07
 
 - Serialize every vault operation across server processes, not only threads:

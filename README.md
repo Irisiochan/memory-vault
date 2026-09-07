@@ -6,6 +6,14 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
+## v0.8.1：读路径防护补漏
+
+修复 v0.8.0 验收发现的两个问题：读取路径校验移到 Git 拉取之后，拉取带入的
+vault 外符号链接第一次读取就会被拒绝；`search_vault`、`list_memories`、
+`get_related` 和任务快照的扫描入口统一走同一套路径校验，直接跳过符号链接。
+`archive_memory` 在“已归档但 push 失败”后重试时，会确认归档副本并补推
+未同步的提交，而不再报“文件不存在”。
+
 ## v0.8.0：跨进程写安全
 
 写锁从「同一服务进程内」升级为「同一台机器上的所有服务进程」：vault 根目录的

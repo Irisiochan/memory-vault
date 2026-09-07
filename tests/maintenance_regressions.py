@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT))
 
 from _meta import vault_runtime as rt
 from _meta import vault_search
+from _meta import vault_tasks
 from _meta import vault_writes
 
 
@@ -136,6 +137,115 @@ class DirectReadPullOrderTest(unittest.TestCase):
 
         self.assertIn("`memories/remote-related.md`", result)
         self.assertNotIn("文件不存在", result)
+
+
+class SymlinkProtectionTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.outside = Path(self.temp.name) / "outside"
+        self.outside.mkdir()
+        self.vault = Path(self.temp.name) / "vault"
+        rt.configure(self.vault)
+        rt.GIT_SYNC_MODE = "off"
+        self.original_pull = rt.pull_if_stale
+        rt.pull_if_stale = lambda: None
+        self.secret = self.outside / "secret.md"
+        self.secret.write_text(
+            "---\nstatus: open\ndue: 2020-01-01\n---\n\n# LEAKED-TITLE\n\nLEAKED-BODY\n",
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        rt.pull_if_stale = self.original_pull
+        self.temp.cleanup()
+
+    def symlink(self, relative: str) -> None:
+        link = self.vault / relative
+        link.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            link.symlink_to(self.secret)
+        except OSError:
+            self.skipTest("symlinks unavailable on this platform")
+
+    def test_read_file_rejects_symlink_installed_by_pull_on_first_read(self):
+        def pull_installs_symlink() -> None:
+            self.symlink("memories/leak.md")
+
+        rt.pull_if_stale = pull_installs_symlink
+
+        result = vault_search.read_file("memories/leak.md")
+
+        self.assertNotIn("LEAKED-BODY", result)
+        self.assertIn("路径不合法", result)
+
+    def test_search_scan_and_task_snapshot_skip_symlinked_markdown(self):
+        (self.vault / "memories").mkdir(parents=True, exist_ok=True)
+        (self.vault / "memories" / "real.md").write_text(
+            "# 真实记忆\n\n正常内容。\n", encoding="utf-8"
+        )
+        self.symlink("memories/leak.md")
+        self.symlink("tasks/leak-task.md")
+
+        self.assertIn("没有找到", vault_search.search_vault("LEAKED-BODY"))
+        self.assertNotIn(
+            "memories/leak.md",
+            [item["path"] for item in rt.scan_files()],
+        )
+        self.assertNotIn(
+            "LEAKED-TITLE",
+            "\n".join(vault_tasks.time_sensitive_lines()),
+        )
+
+    def test_get_related_rejects_symlinked_document(self):
+        self.symlink("memories/leak.md")
+
+        result = vault_search.get_related("memories/leak.md")
+
+        self.assertNotIn("LEAKED", result)
+        self.assertIn("路径不合法或文件不存在", result)
+
+
+class ArchiveRetrySyncTest(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.vault = Path(self.temp.name)
+        rt.configure(self.vault)
+        rt.GIT_SYNC_MODE = "off"
+        self.original_git_sync = rt.git_sync
+
+    def tearDown(self):
+        rt.git_sync = self.original_git_sync
+        self.temp.cleanup()
+
+    def test_retried_archive_confirms_result_and_finishes_sync(self):
+        (self.vault / "memories").mkdir(parents=True, exist_ok=True)
+        (self.vault / "memories" / "old.md").write_text(
+            "# 过时记忆\n\n内容。\n", encoding="utf-8"
+        )
+        first = vault_writes.archive_memory("memories/old.md", "过时", "test")
+        self.assertIn("已归档", first)
+        self.assertFalse((self.vault / "memories" / "old.md").exists())
+
+        synced_paths: list[tuple[Path, ...]] = []
+
+        def fake_git_sync(message: str, *paths: Path) -> str:
+            synced_paths.append(paths)
+            return "（无新变更；已补推此前未推送的提交到 GitHub）"
+
+        rt.git_sync = fake_git_sync
+
+        retry = vault_writes.archive_memory("memories/old.md", "过时", "test")
+
+        self.assertIn("此前已归档", retry)
+        self.assertIn("已补推", retry)
+        self.assertNotIn("文件不存在", retry)
+        self.assertEqual(1, len(synced_paths))
+        self.assertTrue(str(synced_paths[0][1]).endswith("_old.md"))
+
+    def test_missing_file_without_archived_copy_still_reports_not_found(self):
+        result = vault_writes.archive_memory("memories/never-existed.md", "x", "test")
+
+        self.assertIn("文件不存在", result)
 
 
 class DailyBackfillTest(unittest.TestCase):

@@ -32,8 +32,11 @@ def time_sensitive_lines() -> list[str]:
     today = rt.today()
     overdue, due_today, upcoming, no_due, dormant_titles = [], [], [], [], []
     for markdown in sorted(dirpath.glob("*.md")):
+        safe = rt.safe_md(f"tasks/{markdown.name}")
+        if safe is None or not safe.is_file():
+            continue
         meta, body = rt.parse_frontmatter(
-            markdown.read_text(encoding="utf-8", errors="replace")
+            safe.read_text(encoding="utf-8", errors="replace")
         )
         if meta.get("status", "open") != "open":
             continue
