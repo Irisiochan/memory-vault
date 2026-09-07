@@ -252,7 +252,8 @@ memory_vault_mcp/    可安装命令的 Python 包装
 ```
 
 `_meta/mcp_server.py` 只负责工具注册与入口；上下文、事实、检索、写入、任务和传输逻辑
-分别位于 `_meta/vault_*.py`，便于独立测试和演进。
+分别位于 `_meta/vault_*.py`，便于独立测试和演进。分层结构、写事务与锁、fact 层等
+实现细节见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 隐私边界
 
