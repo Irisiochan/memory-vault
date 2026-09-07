@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-import threading
 import uuid
 
 import yaml
@@ -24,7 +23,8 @@ FACT_BLOCK_RE = re.compile(
 )
 FACT_DOMAIN_RE = re.compile(r"^[a-z][a-z0-9-]{0,39}$")
 FACT_KEY_RE = re.compile(r"^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$")
-_fact_lock = threading.Lock()
+# Fact read-modify-write shares the vault-wide cross-process operation lock.
+_fact_lock = rt.operation_lock
 
 
 def fact_domain_path(domain: str):

@@ -8,13 +8,14 @@ import os
 import re
 import shutil
 import subprocess
-import threading
 import time
 from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
+
+from _meta.vault_lock import VaultLock
 
 
 CODE_ROOT = Path(__file__).resolve().parent.parent
@@ -38,18 +39,20 @@ CORE_FILES = [
 TZ = ZoneInfo("Asia/Shanghai")
 GIT_SYNC_MODE = "auto"
 
-_mutation_lock = threading.RLock()
-_git_lock = threading.Lock()
+# One reentrant boundary for every vault operation, shared across the threads
+# of this server and any other server process pointed at the same vault
+# (e.g. a Docker HTTP instance plus per-CLI stdio instances).
+operation_lock = VaultLock(lambda: VAULT)
 _last_pull = 0.0
 _WEEKDAY_CN = "一二三四五六日"
 
 
 def serialized_mutation(function):
-    """Serialize a complete read-modify-write-sync mutation in this process."""
+    """Serialize a complete read-modify-write-sync mutation across processes."""
 
     @wraps(function)
     def locked(*args, **kwargs):
-        with _mutation_lock:
+        with operation_lock:
             return function(*args, **kwargs)
 
     return locked
@@ -163,6 +166,8 @@ def run_git(*args: str, timeout: int = GIT_TIMEOUT) -> subprocess.CompletedProce
     return subprocess.run(
         ["git", *args],
         cwd=VAULT,
+        # The server owns stdin for MCP; Git must never inherit that live pipe.
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -206,7 +211,7 @@ def pull_if_stale() -> None:
     global _last_pull
     if not git_enabled():
         return
-    with _mutation_lock, _git_lock:
+    with operation_lock:
         if time.time() - _last_pull < PULL_INTERVAL:
             return
         try:
@@ -236,7 +241,7 @@ def git_sync(message: str, *changed_paths: Path) -> str:
     if not relative_paths:
         return "（已保存到本地 vault；没有可同步路径）"
 
-    with _mutation_lock, _git_lock:
+    with operation_lock:
         try:
             committed = False
             staged_result = run_git("diff", "--cached", "--name-only")
@@ -254,9 +259,26 @@ def git_sync(message: str, *changed_paths: Path) -> str:
             if unexpected:
                 return "（已本地保存；检测到无关 staged 改动，未自动提交）"
 
-            staged = run_git("add", "--", *relative_paths)
-            if staged.returncode != 0:
-                return f"（已保存到本地 vault；暂存失败：{git_error_text(staged)}）"
+            stage_paths = []
+            for relative in relative_paths:
+                if not (VAULT / relative).exists():
+                    tracked = run_git(
+                        "--literal-pathspecs", "ls-files", "--error-unmatch", "--", relative
+                    )
+                    if tracked.returncode == 1:
+                        # A retried archive may have already committed its
+                        # source deletion; still retry the pending push.
+                        continue
+                    if tracked.returncode != 0:
+                        return (
+                            "（已本地保存；检查文件跟踪状态失败："
+                            f"{git_error_text(tracked)}；未自动提交）"
+                        )
+                stage_paths.append(relative)
+            if stage_paths:
+                staged = run_git("--literal-pathspecs", "add", "--", *stage_paths)
+                if staged.returncode != 0:
+                    return f"（已保存到本地 vault；暂存失败：{git_error_text(staged)}）"
 
             staged_diff = run_git("diff", "--cached", "--quiet")
             if staged_diff.returncode not in (0, 1):
@@ -361,17 +383,27 @@ def scan_files(dirs: list[str] | None = None) -> list[dict]:
 
 
 def safe_md(path: str) -> Path | None:
-    clean = Path(path).as_posix()
-    if ".." in clean or clean.startswith("/"):
+    """Accept vault-relative Markdown, with no traversal, hidden paths or symlinks."""
+    if not path or "\\" in path or ":" in path:
         return None
-    filepath = VAULT / clean
-    if filepath.suffix != ".md":
+    relative = Path(path)
+    if relative.is_absolute() or relative.suffix != ".md":
         return None
+    if any(part.startswith(".") for part in relative.parts):
+        return None
+    root = VAULT.resolve()
+    target = root
+    for part in relative.parts:
+        target = target / part
+        if target.is_symlink():
+            return None
     try:
-        filepath.resolve().relative_to(VAULT.resolve())
-    except ValueError:
+        target.resolve().relative_to(root)
+    except (ValueError, OSError):
         return None
-    return filepath
+    # Preserve the caller's root spelling (e.g. Windows RUNNER~1 vs runneradmin)
+    # after validating its canonical target, so relative paths stay comparable.
+    return VAULT / relative
 
 
 def safe_generated_md(directory: str, slug: str, prefix: str = "") -> Path | None:

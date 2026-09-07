@@ -6,6 +6,19 @@ Markdown 存储、Obsidian 可读、MCP 读写、Docker 部署、可选 Git 多�
 仓库本身是空白模板，不包含作者的私人记忆。请用 **Use this template**
 创建你自己的 **private repository**。
 
+## v0.8.0：跨进程写安全
+
+写锁从「同一服务进程内」升级为「同一台机器上的所有服务进程」：vault 根目录的
+`.vault-operation.lock` 文件锁（可重入）覆盖完整的“读取 → 修改 → 落盘 → Git 同步”
+事务。Docker HTTP 实例和各 CLI 的 stdio 实例现在可以安全共享同一个 vault；
+进程崩溃时操作系统自动释放锁，不会留下死锁。
+
+配套加固：Git 子进程不再继承 MCP 的 stdio 管道（Git 一旦弹出交互询问，不会再
+吞掉协议字节）；`git add` / `ls-files` 使用 `--literal-pathspecs`；归档重试时
+若删除已在上一次 commit 中完成，同步会继续补推而不是报“文件不存在”；
+`read_file` 路径校验拒绝反斜杠、盘符、隐藏段和符号链接组件，并在 Windows 上
+保留调用方的 vault 根拼写，保证相对路径可比较。
+
 ## v0.7.1：任务改期与结构化写回结果
 
 `update_task` 现在可在同一次原子写入中传入 `due: YYYY-MM-DD` 完成改期，或传
@@ -130,9 +143,10 @@ docker compose up -d
 | 日常 | `log_daily` / `write_diary` | 生活流水 / 完整日记与阶段总结 |
 | 任务 | `add_task` / `update_task` | 新建待办；原子改期或清除期限；完成或放弃时自动归档 |
 
-所有 MCP 写工具在同一服务进程内共享一把可重入写锁，覆盖完整的
-“读取 → 修改 → 落盘 → Git 同步”事务，避免多个 HTTP 客户端或 AI 同时更新同一
-文件时互相覆盖。多个独立服务进程不要同时写同一个 vault。
+所有 MCP 写工具共享一把可重入的跨进程写锁（vault 根目录的
+`.vault-operation.lock` 文件锁），覆盖完整的“读取 → 修改 → 落盘 → Git 同步”
+事务，避免多个 HTTP 客户端、AI 或同机的多个服务进程同时更新同一文件时互相覆盖。
+不要删除这个锁文件；服务崩溃时操作系统会自动释放锁。
 
 Fact 的 `valid_from` / `valid_until` 会参与读取：默认 `get_facts` 和 compact
 context 只返回 vault 当天有效的 active facts；`status=all` 仍保留完整版本用于审计。
@@ -262,6 +276,7 @@ python tests/task_snapshot_tiers.py
 python tests/protocol_smoke.py
 python tests/http_smoke.py
 python tests/concurrent_writes.py
+python tests/vault_lock.py
 python tests/maintenance_regressions.py
 python tests/repository_boundary.py
 python -m build
@@ -269,8 +284,8 @@ docker build -t memory-vault-mcp .
 ```
 
 测试使用临时 vault，覆盖初始化、本地写入、记忆升级、分离上下文、任务冬眠分层、
-旧 vault 兼容、路径穿越防护、仓库边界，以及真实 stdio / streamable-http MCP
-握手，不会触碰你的真实数据。
+跨进程写锁、旧 vault 兼容、路径穿越防护、仓库边界，以及真实 stdio /
+streamable-http MCP 握手，不会触碰你的真实数据。
 
 ## License
 

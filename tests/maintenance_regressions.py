@@ -208,11 +208,24 @@ class GitSyncFlowTest(unittest.TestCase):
 
         self.assertEqual("（已同步到 GitHub）", message)
         operations = [
-            call[0]
+            operation
             for call in self.calls
-            if call[:1] in {("add",), ("commit",), ("pull",), ("push",)}
+            for operation in [call[1] if call[:1] == ("--literal-pathspecs",) else call[0]]
+            if operation in {"add", "commit", "pull", "push"}
         ]
         self.assertEqual(["add", "commit", "pull", "push"], operations[:4])
+
+    def test_retried_archive_with_committed_deletion_still_pushes(self):
+        self.responses[
+            ("--literal-pathspecs", "ls-files", "--error-unmatch", "--", "memories/changed.md")
+        ] = completed(1)
+        self.responses[("diff", "--cached", "--quiet")] = completed(0)
+
+        message = rt.git_sync("auto: test", self.changed_path())
+
+        self.assertEqual("（无新变更；已补推此前未推送的提交到 GitHub）", message)
+        self.assertNotIn(("--literal-pathspecs", "add", "--", "memories/changed.md"), self.calls)
+        self.assertIn(("push",), self.calls)
 
     def test_pull_failure_returns_real_error_and_skips_push(self):
         self.responses[("pull", "--rebase")] = completed(

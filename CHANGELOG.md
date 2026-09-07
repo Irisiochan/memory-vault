@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.8.0 - 2026-09-07
+
+- Serialize every vault operation across server processes, not only threads:
+  a reentrant OS file lock (`.vault-operation.lock` in the vault root) now
+  guards the full read-modify-write-sync cycle, so a Docker HTTP instance and
+  per-CLI stdio instances can safely share one vault. The OS releases the lock
+  automatically if a server dies, so a crash cannot leave the vault stuck.
+- Route fact-domain read-modify-write through the same cross-process lock
+  instead of a separate in-process lock.
+- Detach Git subprocesses from the server's stdin so a Git prompt can never
+  swallow bytes from the live stdio MCP pipe.
+- Run `git add` / `git ls-files` with `--literal-pathspecs`, and tolerate a
+  retried archive whose source deletion was already committed: the sync still
+  retries the pending push instead of failing on the missing file.
+- Harden `read_file` path validation: reject backslashes, drive colons, hidden
+  path segments and symlinked components, and preserve the caller's vault-root
+  spelling after validating the canonical target so relative paths stay
+  comparable on Windows.
+- Add a cross-process lock test suite (`tests/vault_lock.py`) covering lost
+  read-modify-write updates, nested reentrancy, crash recovery and lock-file
+  acquisition failures.
+
 ## 0.7.1 - 2026-08-25
 
 - Let the MCP `update_task` tool atomically change or clear `due` while it
