@@ -174,6 +174,21 @@ def _format_fact_value(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
+COMPACT_NOTE_LIMIT = 120
+COMPACT_NOTE_TRUNCATED_SUFFIX = "…（详情用 search_vault / read_file 检索）"
+
+
+def _truncate_compact_note(note: str) -> str:
+    """Truncate an over-long top-level fact note for compact rendering.
+
+    Only the top-level ``note`` passes through here; ``value`` internals
+    (including any note/notes inside ``value``) are never truncated.
+    """
+    if len(note) <= COMPACT_NOTE_LIMIT:
+        return note
+    return note[:COMPACT_NOTE_LIMIT] + COMPACT_NOTE_TRUNCATED_SUFFIX
+
+
 def render_compact_fact_context(facts: list[dict]) -> str:
     title = f"# {rt.OWNER} compact fact context"
     if not facts:
@@ -191,7 +206,7 @@ def render_compact_fact_context(facts: list[dict]) -> str:
         )
         note = str(fact.get("note") or "").strip()
         if note:
-            lines.append(f"  - note: {note}")
+            lines.append(f"  - note: {_truncate_compact_note(note)}")
         refs = fact.get("source_refs") or []
         lines.append(f"  - source_refs: {', '.join(str(ref) for ref in refs)}")
     return "\n".join(lines)
