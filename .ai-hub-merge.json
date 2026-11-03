@@ -1,0 +1,1 @@
+{"repoId": "memory-vault-template", "targetBranch": "main", "validation": [{"args": ["scripts/ai-hub-verify.mjs"], "command": "node", "suite": "python tests"}]}
